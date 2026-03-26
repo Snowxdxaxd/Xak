@@ -95,20 +95,3 @@ API работает на:
 ```powershell
 npm run build
 ```
-
-## 6) Подготовка к GitHub
-
-```powershell
-git init
-git add .
-git commit -m "Initial setup: local PostgreSQL + API"
-```
-
-Что важно:
-- `.env` не коммитить (он уже добавлен в `.gitignore`)
-- В репозиторий должны попасть:
-  - `.env.example`
-  - `server/schema.sql`
-  - `README.md`
-  - весь исходный код `src` и `server`
-  
