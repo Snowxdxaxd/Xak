@@ -15,6 +15,8 @@ import { ParentDashboard } from './pages/ParentDashboard';
 import { Leaderboard } from './pages/Leaderboard';
 import { GradesPage } from './pages/GradesPage';
 import { GroupsPage } from './pages/GroupsPage';
+import { CodePlayground } from './pages/CodePlayground';
+import { TeacherDashboard } from './pages/TeacherDashboard';
 
 export const router = createBrowserRouter([
   {
@@ -37,6 +39,8 @@ export const router = createBrowserRouter([
       { path: "leaderboard", Component: Leaderboard },
       { path: "grades", Component: GradesPage },
       { path: "groups", Component: GroupsPage },
+      { path: "playground", Component: CodePlayground },
+      { path: "teacher-dashboard", Component: TeacherDashboard },
     ],
   },
 ]);

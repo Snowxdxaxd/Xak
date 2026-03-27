@@ -9,14 +9,16 @@ services:
       POSTGRES_DB: codekids
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./server/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      # Schema + pgcrypto extension run only on first init (empty data volume)
+      - ./server/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      # Demo seed users/courses/classes are created by the app on first startup
     ports:
       - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d codekids"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 15
 
   app:
     build: .
@@ -30,6 +32,14 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/codekids
       API_PORT: 4000
       JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+      ROOT_ADMIN_EMAIL: ${ROOT_ADMIN_EMAIL:-admin@codekids.local}
+      ROOT_ADMIN_PASSWORD: ${ROOT_ADMIN_PASSWORD:-Admin12345!}
+      # Email (optional — leave empty to disable email verification)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@codekids.local}
     ports:
       - "4000:4000"
 

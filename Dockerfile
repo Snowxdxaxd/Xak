@@ -4,9 +4,14 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --frozen-lockfile
+# Use npm install so new deps in package.json are picked up automatically
+RUN npm install --frozen-lockfile || npm install
 
 COPY . .
+
+# Build the Vite frontend
+ARG VITE_API_BASE_URL=/api
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 RUN npm run build
 
 # ─── Stage 2: Production image ───────────────────────────────────────────────
@@ -16,7 +21,7 @@ WORKDIR /app
 
 # Install only production deps for the server
 COPY package*.json ./
-RUN npm ci --frozen-lockfile --omit=dev
+RUN npm install --omit=dev || npm install --omit=dev --ignore-scripts
 
 # Copy built frontend assets
 COPY --from=builder /app/dist ./dist

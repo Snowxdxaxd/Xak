@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { BookOpen, Plus, ArrowLeft, CheckCircle2, Pencil, Trash2, Key, ToggleLeft } from 'lucide-react';
+import { BookOpen, Plus, ArrowLeft, CheckCircle2, Pencil, Trash2, Key, ToggleLeft, Lock, Users, UserMinus, UserPlus } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -29,15 +29,73 @@ export function CourseView() {
   });
   const [answerKey, setAnswerKey] = useState('');
   const [checkMode, setCheckMode] = useState<'auto' | 'manual'>('manual');
+  // Enrollment management (private courses)
+  const [enrolledStudents, setEnrolledStudents] = useState<any[]>([]);
+  const [enrollEmail, setEnrollEmail] = useState('');
+  const [showEnroll, setShowEnroll] = useState(false);
 
   useEffect(() => { if (!loading && !user) navigate('/login'); }, [user, loading, navigate]);
   useEffect(() => { if (id) loadCourse(); }, [id]);
+  useEffect(() => {
+    if (id && course?.isPrivate && (userRole === 'teacher' || userRole === 'superadmin')) {
+      loadEnrolled();
+    }
+  }, [id, course, userRole]);
 
   const loadCourse = async () => {
     try {
-      const data = await api.getCourse(id!);
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = {};
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+      const res = await fetch(`/api/courses/${id}`, { headers });
+      if (!res.ok) {
+        const d = await res.json();
+        toast.error(d.error || 'Ошибка загрузки курса');
+        navigate('/courses');
+        return;
+      }
+      const data = await res.json();
       setCourse(data);
     } catch { toast.error('Ошибка загрузки курса'); }
+  };
+
+  const loadEnrolled = async () => {
+    try {
+      const t = await getToken(); if (!t) return;
+      const res = await fetch(`/api/courses/${id}/enrollments`, {
+        headers: { Authorization: `Bearer ${t}` },
+      });
+      const d = await res.json();
+      setEnrolledStudents(d.students || []);
+    } catch {}
+  };
+
+  const handleEnroll = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const t = await getToken(); if (!t) return;
+      const res = await fetch(`/api/courses/${id}/enroll`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+        body: JSON.stringify({ studentEmail: enrollEmail }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      toast.success('Ученик записан на курс');
+      setEnrollEmail('');
+      loadEnrolled();
+    } catch (err: any) { toast.error(err.message || 'Ошибка записи'); }
+  };
+
+  const handleUnenroll = async (studentId: string) => {
+    try {
+      const t = await getToken(); if (!t) return;
+      await fetch(`/api/courses/${id}/enroll/${studentId}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${t}` },
+      });
+      toast.success('Ученик удалён из курса');
+      loadEnrolled();
+    } catch { toast.error('Ошибка'); }
   };
 
   const getToken = async () => {
@@ -120,24 +178,87 @@ export function CourseView() {
 
         <div className="flex items-start justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold mb-2">{course.title}</h1>
+            <div className="flex items-center gap-2 mb-2">
+              <h1 className="text-3xl font-bold">{course.title}</h1>
+              {course.isPrivate && (
+                <Badge variant="outline" className="text-primary border-primary/30 flex items-center gap-1">
+                  <Lock className="w-3 h-3" /> Индивидуальный
+                </Badge>
+              )}
+            </div>
             <p className="text-muted-foreground">{course.description}</p>
             <p className="text-sm text-muted-foreground mt-1">{lessons.length} уроков</p>
           </div>
           {isTeacher && (
-            <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" className="gap-1.5 flex-shrink-0">
-                  <Plus className="w-4 h-4" /> Добавить урок
+            <div className="flex gap-2 flex-shrink-0">
+              {course.isPrivate && (
+                <Button
+                  variant="outline" size="sm"
+                  className="gap-1.5"
+                  onClick={() => { setShowEnroll(!showEnroll); if (!showEnroll) loadEnrolled(); }}
+                >
+                  <Users className="w-4 h-4" />
+                  Ученики ({enrolledStudents.length})
                 </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader><DialogTitle>Новый урок</DialogTitle></DialogHeader>
-                <LessonForm form={lessonForm} setForm={setLessonForm} onSubmit={handleAddLesson} submitLabel="Создать урок" />
-              </DialogContent>
-            </Dialog>
+              )}
+              <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="gap-1.5">
+                    <Plus className="w-4 h-4" /> Добавить урок
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader><DialogTitle>Новый урок</DialogTitle></DialogHeader>
+                  <LessonForm form={lessonForm} setForm={setLessonForm} onSubmit={handleAddLesson} submitLabel="Создать урок" />
+                </DialogContent>
+              </Dialog>
+            </div>
           )}
         </div>
+
+        {/* Enrollment panel for private courses */}
+        {isTeacher && course.isPrivate && showEnroll && (
+          <Card className="p-5 mb-6 border-primary/20">
+            <h3 className="font-semibold mb-4 flex items-center gap-2">
+              <Users className="w-4 h-4" /> Управление доступом
+            </h3>
+            <form onSubmit={handleEnroll} className="flex gap-2 mb-4">
+              <Input
+                type="email"
+                placeholder="Email ученика..."
+                value={enrollEmail}
+                onChange={e => setEnrollEmail(e.target.value)}
+                className="flex-1"
+                required
+              />
+              <Button type="submit" size="sm" className="gap-1.5 flex-shrink-0">
+                <UserPlus className="w-4 h-4" /> Добавить
+              </Button>
+            </form>
+            {enrolledStudents.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-3">
+                Нет записанных учеников. Добавьте вручную или через класс.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {enrolledStudents.map((s: any) => (
+                  <div key={s.id} className="flex items-center justify-between p-2.5 rounded-md bg-muted/50">
+                    <div>
+                      <p className="text-sm font-medium">{s.name}</p>
+                      <p className="text-xs text-muted-foreground">{s.email}</p>
+                    </div>
+                    <Button
+                      variant="ghost" size="icon" className="w-7 h-7 text-destructive hover:text-destructive"
+                      onClick={() => handleUnenroll(s.id)}
+                    >
+                      <UserMinus className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
 
         {lessons.length === 0 ? (
           <Card className="p-10 text-center">

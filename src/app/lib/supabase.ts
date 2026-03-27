@@ -137,10 +137,10 @@ export const supabase = {
 
 export const api = {
   // Auth
-  async signUp(email: string, password: string, userData: any) {
+  async signUp(email: string, password: string, userData: any, code?: string) {
     return request('/auth/signup', {
       method: 'POST',
-      body: { email, password, userData },
+      body: { email, password, userData, ...(code ? { code } : {}) },
     });
   },
 

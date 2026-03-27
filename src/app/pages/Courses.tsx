@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { BookOpen, Plus, Pencil, Trash2, BarChart2 } from 'lucide-react';
+import { BookOpen, Plus, Pencil, Trash2, BarChart2, Lock, Globe } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
+import { Switch } from '../components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { api, supabase } from '../lib/supabase';
 import { toast } from 'sonner';
@@ -27,14 +28,20 @@ export function Courses() {
   const [courses, setCourses] = useState<any[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editCourse, setEditCourse] = useState<any>(null);
-  const [form, setForm] = useState({ title: '', description: '', level: 'beginner' });
+  const [form, setForm] = useState({ title: '', description: '', level: 'beginner', isPrivate: false });
 
   useEffect(() => { if (!loading && !user) navigate('/login'); }, [user, loading, navigate]);
-  useEffect(() => { loadCourses(); }, []);
+  useEffect(() => { loadCourses(); }, [user]);
 
   const loadCourses = async () => {
-    const data = await api.getCourses();
-    setCourses(data.courses || []);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = {};
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+      const res = await fetch('/api/courses', { headers });
+      const data = await res.json();
+      setCourses(data.courses || []);
+    } catch { toast.error('Ошибка загрузки курсов'); }
   };
 
   const getToken = async () => {
@@ -47,12 +54,18 @@ export function Courses() {
     try {
       const t = await getToken();
       if (!t) { toast.error('Необходима авторизация'); return; }
-      await api.createCourse(form, t);
-      toast.success('Курс создан');
+      const res = await fetch('/api/courses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(form.isPrivate ? 'Индивидуальный курс создан' : 'Курс создан');
       setIsCreateOpen(false);
-      setForm({ title: '', description: '', level: 'beginner' });
+      setForm({ title: '', description: '', level: 'beginner', isPrivate: false });
       loadCourses();
-    } catch { toast.error('Ошибка создания курса'); }
+    } catch (err: any) { toast.error(err.message || 'Ошибка создания курса'); }
   };
 
   const handleEdit = async (e: React.FormEvent) => {
@@ -78,8 +91,7 @@ export function Courses() {
       const t = await getToken();
       if (!t) return;
       await fetch(`/api/courses/${courseId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${t}` },
+        method: 'DELETE', headers: { Authorization: `Bearer ${t}` },
       });
       toast.success('Курс удалён');
       loadCourses();
@@ -93,6 +105,8 @@ export function Courses() {
   );
 
   const isTeacher = userRole === 'teacher' || userRole === 'superadmin';
+  const publicCourses  = courses.filter(c => !c.isPrivate);
+  const privateCourses = courses.filter(c => c.isPrivate);
 
   return (
     <Layout>
@@ -128,48 +142,47 @@ export function Courses() {
             </p>
           </Card>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {courses.map((c, i) => (
-              <motion.div key={c.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                <Card className="p-5 hover:shadow-md transition-shadow group flex flex-col h-full">
-                  <div className="flex items-start gap-3 mb-3 flex-1">
-                    <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-                      <BookOpen className="w-4 h-4 text-muted-foreground" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <Link to={`/course/${c.id}`}>
-                        <h3 className="font-semibold text-sm group-hover:underline line-clamp-1">{c.title}</h3>
-                      </Link>
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{c.description}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between pt-3 border-t">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">{LEVELS[c.level] || c.level}</Badge>
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <BarChart2 className="w-3 h-3" /> {c.lessonsCount || 0} ур.
-                      </span>
-                    </div>
-                    {isTeacher && (
-                      <div className="flex gap-1">
-                        <Button
-                          variant="ghost" size="icon" className="w-7 h-7"
-                          onClick={() => { setEditCourse(c); setForm({ title: c.title, description: c.description, level: c.level }); }}
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost" size="icon" className="w-7 h-7 text-destructive hover:text-destructive"
-                          onClick={() => handleDelete(c.id)}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              </motion.div>
-            ))}
+          <div className="space-y-8">
+            {/* Public courses */}
+            {publicCourses.length > 0 && (
+              <section>
+                <div className="flex items-center gap-2 mb-4">
+                  <Globe className="w-4 h-4 text-muted-foreground" />
+                  <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+                    Общие курсы
+                  </h2>
+                  <Badge variant="secondary" className="text-xs">{publicCourses.length}</Badge>
+                </div>
+                <CourseGrid
+                  courses={publicCourses}
+                  isTeacher={isTeacher}
+                  onEdit={c => { setEditCourse(c); setForm({ title: c.title, description: c.description, level: c.level, isPrivate: c.isPrivate }); }}
+                  onDelete={handleDelete}
+                />
+              </section>
+            )}
+
+            {/* Individual/private courses */}
+            {privateCourses.length > 0 && (
+              <section>
+                <div className="flex items-center gap-2 mb-4">
+                  <Lock className="w-4 h-4 text-muted-foreground" />
+                  <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+                    Индивидуальные курсы
+                  </h2>
+                  <Badge variant="outline" className="text-xs">{privateCourses.length}</Badge>
+                  {isTeacher && (
+                    <span className="text-xs text-muted-foreground ml-1">· Видны только записанным ученикам</span>
+                  )}
+                </div>
+                <CourseGrid
+                  courses={privateCourses}
+                  isTeacher={isTeacher}
+                  onEdit={c => { setEditCourse(c); setForm({ title: c.title, description: c.description, level: c.level, isPrivate: c.isPrivate }); }}
+                  onDelete={handleDelete}
+                />
+              </section>
+            )}
           </div>
         )}
 
@@ -182,6 +195,62 @@ export function Courses() {
         </Dialog>
       </div>
     </Layout>
+  );
+}
+
+function CourseGrid({ courses, isTeacher, onEdit, onDelete }: any) {
+  return (
+    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {courses.map((c: any, i: number) => (
+        <motion.div key={c.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
+          <Card className={`p-5 hover:shadow-md transition-shadow group flex flex-col h-full ${c.isPrivate ? 'border-primary/20' : ''}`}>
+            <div className="flex items-start gap-3 mb-3 flex-1">
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${c.isPrivate ? 'bg-primary/10' : 'bg-muted'}`}>
+                {c.isPrivate
+                  ? <Lock className="w-4 h-4 text-primary/70" />
+                  : <BookOpen className="w-4 h-4 text-muted-foreground" />
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <Link to={`/course/${c.id}`}>
+                  <h3 className="font-semibold text-sm group-hover:underline line-clamp-1">{c.title}</h3>
+                </Link>
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{c.description}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between pt-3 border-t">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="secondary" className="text-xs">{LEVELS[c.level] || c.level}</Badge>
+                {c.isPrivate && (
+                  <Badge variant="outline" className="text-xs text-primary border-primary/30">
+                    Индивидуальный
+                  </Badge>
+                )}
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <BarChart2 className="w-3 h-3" /> {c.lessonsCount || 0} ур.
+                </span>
+              </div>
+              {isTeacher && (
+                <div className="flex gap-1 flex-shrink-0">
+                  <Button
+                    variant="ghost" size="icon" className="w-7 h-7"
+                    onClick={() => onEdit(c)}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost" size="icon" className="w-7 h-7 text-destructive hover:text-destructive"
+                    onClick={() => onDelete(c.id)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          </Card>
+        </motion.div>
+      ))}
+    </div>
   );
 }
 
@@ -206,6 +275,23 @@ function CourseForm({ form, setForm, onSubmit, submitLabel }: any) {
             <SelectItem value="advanced">Продвинутый</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+      {/* Individual course toggle */}
+      <div className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${form.isPrivate ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
+        <Switch
+          id="cf-private"
+          checked={form.isPrivate}
+          onCheckedChange={v => setForm({ ...form, isPrivate: v })}
+          className="mt-0.5"
+        />
+        <div>
+          <Label htmlFor="cf-private" className="font-medium cursor-pointer flex items-center gap-1.5">
+            <Lock className="w-3.5 h-3.5" /> Индивидуальный курс
+          </Label>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Курс будет скрыт от других учеников. Доступ — только через класс или ручную запись.
+          </p>
+        </div>
       </div>
       <Button type="submit" className="w-full">{submitLabel}</Button>
     </form>
