@@ -95,6 +95,7 @@ API работает на:
 ```powershell
 npm run build
 ```
+<<<<<<< HEAD
 
 ## 6) Подготовка к GitHub
 
@@ -118,3 +119,5 @@ git commit -m "Initial setup: local PostgreSQL + API"
   супер админ лог и пароль:
 admin@codekids.local
   Admin12345!
+=======
+>>>>>>> 89a615d7d4014dde62cd3d4fe076e6fc50e59813
