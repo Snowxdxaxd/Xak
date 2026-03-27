@@ -49,6 +49,16 @@ function canManageEntity(ownerId, req) {
   return isSuperAdmin(req) || ownerId === req.user?.sub;
 }
 
+async function canAccessGroup(groupId, req) {
+  if (groupId === 'general') return true;
+  if (isSuperAdmin(req)) return true;
+  const g = await query('select teacher_id from groups where id=$1', [groupId]);
+  if (!g.rowCount) return false;
+  if (g.rows[0].teacher_id === req.user?.sub) return true;
+  const m = await query('select 1 from group_members where group_id=$1 and student_id=$2', [groupId, req.user?.sub]);
+  return m.rowCount > 0;
+}
+
 async function addNotification(userId, type, title, message, data = {}) {
   try {
     await query(
@@ -112,16 +122,25 @@ async function grantAchievement(userId, achievement) {
 
 async function ensureRootAdmin() {
   try {
-    const { rowCount } = await query('select id from app_users where email=$1', [ROOT_ADMIN_EMAIL]);
-    if (rowCount) return;
     const hash = await bcrypt.hash(ROOT_ADMIN_PASSWORD, 10);
-    await query(
-      'insert into app_users(email,password_hash,user_metadata) values($1,$2,$3)',
-      [ROOT_ADMIN_EMAIL, hash, JSON.stringify({ name: 'Главный администратор', role: 'superadmin' })]
-    );
-    console.log(`[bootstrap] Root admin created: ${ROOT_ADMIN_EMAIL}`);
+    const meta = JSON.stringify({ name: 'Главный администратор', role: 'superadmin' });
+    const { rowCount } = await query('select id from app_users where email=$1', [ROOT_ADMIN_EMAIL]);
+    if (rowCount) {
+      // Always keep credentials and role in sync with env vars
+      await query(
+        'update app_users set password_hash=$1, user_metadata=$2 where email=$3',
+        [hash, meta, ROOT_ADMIN_EMAIL]
+      );
+      console.log(`[bootstrap] Root admin credentials refreshed: ${ROOT_ADMIN_EMAIL}`);
+    } else {
+      await query(
+        'insert into app_users(email,password_hash,user_metadata) values($1,$2,$3)',
+        [ROOT_ADMIN_EMAIL, hash, meta]
+      );
+      console.log(`[bootstrap] Root admin created: ${ROOT_ADMIN_EMAIL}`);
+    }
   } catch (err) {
-    console.error('[bootstrap] Failed to create root admin', err);
+    console.error('[bootstrap] Failed to ensure root admin', err);
   }
 }
 
@@ -603,7 +622,8 @@ app.post('/submissions', authRequired, async (req, res) => {
 
 app.get('/submissions/pending', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
+    const isAdmin = isSuperAdmin(req);
     const { rows } = await query(
       `select s.id,s.lesson_id as "lessonId",s.course_id as "courseId",
         s.user_id as "userId",s.code,s.status,s.grade,s.feedback,s.created_at as "createdAt",
@@ -613,9 +633,9 @@ app.get('/submissions/pending', authRequired, async (req, res) => {
        left join app_users u on u.id=s.user_id
        left join lessons l on l.id=s.lesson_id
        left join courses c on c.id=s.course_id
-       where s.status='pending' and c.created_by=$1
+       where s.status='pending'${isAdmin ? '' : ' and c.created_by=$1'}
        order by s.created_at desc`,
-      [req.user.sub]
+      isAdmin ? [] : [req.user.sub]
     );
     res.json({ submissions: rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка загрузки заданий' }); }
@@ -717,8 +737,59 @@ app.post('/lessons/:id/complete', authRequired, async (req, res) => {
         icon: 'award',
       });
     }
-    const { rows: lr } = await query('select title from lessons where id=$1', [req.params.id]);
+    const { rows: lr } = await query('select title,course_id from lessons where id=$1', [req.params.id]);
     await addNotification(req.user.sub, 'system', 'Урок пройден!', `Вы завершили урок "${lr[0]?.title || ''}" и получили 50 XP!`, { xp: 50 });
+
+    // Check if the whole course is now complete
+    const courseId = lr[0]?.course_id;
+    if (courseId) {
+      const { rows: courseRows } = await query('select lessons_count, title from courses where id=$1', [courseId]);
+      if (courseRows.length && courseRows[0].lessons_count > 0) {
+        const { rows: doneRows } = await query(
+          `select count(*) as cnt from lesson_completions lc
+           join lessons l on l.id=lc.lesson_id
+           where lc.user_id=$1 and l.course_id=$2`,
+          [req.user.sub, courseId]
+        );
+        const doneCnt = Number(doneRows[0]?.cnt || 0);
+        if (doneCnt >= courseRows[0].lessons_count) {
+          await grantAchievement(req.user.sub, {
+            id: `course-${courseId}`,
+            title: 'Курс пройден!',
+            description: `Пройден курс «${courseRows[0].title}»`,
+            icon: 'graduation-cap',
+          });
+          await awardXP(req.user.sub, 100, 'course_complete');
+          await addNotification(req.user.sub, 'achievement', 'Курс завершён!',
+            `Вы полностью прошли курс «${courseRows[0].title}» и получили 100 XP!`, { courseId });
+          // Check multi-course achievement
+          const { rows: multiCourse } = await query(
+            `select count(distinct l.course_id) as cnt
+             from lesson_completions lc
+             join lessons l on l.id=lc.lesson_id
+             join courses c on c.id=l.course_id
+             where lc.user_id=$1
+               and c.lessons_count > 0
+               and c.lessons_count = (
+                 select count(*) from lesson_completions lc2
+                 join lessons l2 on l2.id=lc2.lesson_id
+                 where lc2.user_id=$1 and l2.course_id=c.id
+               )`,
+            [req.user.sub]
+          );
+          const completedCourses = Number(multiCourse[0]?.cnt || 0);
+          if (completedCourses >= 3) {
+            await grantAchievement(req.user.sub, {
+              id: 'three-courses',
+              title: 'Трижды победитель',
+              description: 'Полностью пройти 3 курса',
+              icon: 'trophy',
+            });
+          }
+        }
+      }
+    }
+
     res.json({ xpGained: 50, level: p.level, xp: p.xp, xpToNextLevel: p.xp_to_next_level });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка завершения урока' }); }
 });
@@ -781,6 +852,8 @@ app.post('/comments', authRequired, async (req, res) => {
 
 app.get('/messages/:groupId', authRequired, async (req, res) => {
   try {
+    const access = await canAccessGroup(req.params.groupId, req);
+    if (!access) return res.status(403).json({ error: 'Нет доступа к этому чату' });
     const { rows } = await query(
       `select id,group_id as "groupId",user_id as "userId",user_name as "userName",
         text,created_at as "createdAt", edited_at as "editedAt"
@@ -795,6 +868,8 @@ app.post('/messages', authRequired, async (req, res) => {
   try {
     const { groupId, text } = req.body;
     if (!groupId || !text) return res.status(400).json({ error: 'groupId и text обязательны' });
+    const access = await canAccessGroup(groupId, req);
+    if (!access) return res.status(403).json({ error: 'Нет доступа к этому чату' });
     const id = randomUUID();
     const userName = req.user?.user_metadata?.name || 'Аноним';
     await query('insert into messages(id,group_id,user_id,user_name,text) values($1,$2,$3,$4,$5)',
@@ -963,20 +1038,57 @@ app.get('/admin/students', authRequired, async (req, res) => {
 
 app.get('/groups', authRequired, async (req, res) => {
   try {
-    const { rows } = await query(
-      `select g.id, g.name, g.description, g.teacher_id as "teacherId",
-        g.created_at as "createdAt",
-        u.user_metadata->>'name' as "teacherName",
-        count(gm.student_id) as "memberCount"
-       from groups g
-       left join app_users u on u.id=g.teacher_id
-       left join group_members gm on gm.group_id=g.id
-       ${isTeacher(req) ? 'where g.teacher_id=$1' : ''}
-       group by g.id, u.user_metadata
-       order by g.created_at desc`,
-      isTeacher(req) ? [req.user.sub] : []
-    );
-    res.json({ groups: rows });
+    let rows = [];
+    if (isSuperAdmin(req)) {
+      const d = await query(
+        `select g.id, g.name, g.description, g.teacher_id as "teacherId",
+          g.created_at as "createdAt",
+          u.user_metadata->>'name' as "teacherName",
+          count(gm.student_id) as "memberCount"
+         from groups g
+         left join app_users u on u.id=g.teacher_id
+         left join group_members gm on gm.group_id=g.id
+         group by g.id, u.user_metadata
+         order by g.created_at desc`
+      );
+      rows = d.rows;
+    } else if (isTeacher(req)) {
+      const d = await query(
+        `select g.id, g.name, g.description, g.teacher_id as "teacherId",
+          g.created_at as "createdAt",
+          u.user_metadata->>'name' as "teacherName",
+          count(gm.student_id) as "memberCount"
+         from groups g
+         left join app_users u on u.id=g.teacher_id
+         left join group_members gm on gm.group_id=g.id
+         where g.teacher_id=$1
+         group by g.id, u.user_metadata
+         order by g.created_at desc`,
+        [req.user.sub]
+      );
+      rows = d.rows;
+    } else {
+      const d = await query(
+        `select g.id, g.name, g.description, g.teacher_id as "teacherId",
+          g.created_at as "createdAt",
+          u.user_metadata->>'name' as "teacherName",
+          count(gm2.student_id) as "memberCount"
+         from group_members gm
+         join groups g on g.id=gm.group_id
+         left join app_users u on u.id=g.teacher_id
+         left join group_members gm2 on gm2.group_id=g.id
+         where gm.student_id=$1
+         group by g.id, u.user_metadata
+         order by g.created_at desc`,
+        [req.user.sub]
+      );
+      rows = d.rows;
+    }
+    const withGeneral = [
+      { id: 'general', name: 'Общий чат', description: 'Общий канал платформы', teacherId: null, createdAt: null, teacherName: null, memberCount: 0 },
+      ...rows,
+    ];
+    res.json({ groups: withGeneral });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
 });
 
@@ -1019,6 +1131,10 @@ app.delete('/groups/:id', authRequired, async (req, res) => {
 
 app.get('/groups/:id/members', authRequired, async (req, res) => {
   try {
+    if (req.params.id === 'general') return res.json({ members: [] });
+    const own = await query('select teacher_id from groups where id=$1', [req.params.id]);
+    if (!own.rowCount) return res.status(404).json({ error: 'Группа не найдена' });
+    if (!canManageEntity(own.rows[0].teacher_id, req)) return res.status(403).json({ error: 'Недостаточно прав' });
     const { rows } = await query(
       `select u.id, u.email, u.user_metadata,
         up.level, up.xp, up.completed_lessons as "completedLessons",
@@ -1037,6 +1153,9 @@ app.get('/groups/:id/members', authRequired, async (req, res) => {
 app.post('/groups/:id/members', authRequired, async (req, res) => {
   try {
     if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
+    const own = await query('select teacher_id from groups where id=$1', [req.params.id]);
+    if (!own.rowCount) return res.status(404).json({ error: 'Группа не найдена' });
+    if (!canManageEntity(own.rows[0].teacher_id, req)) return res.status(403).json({ error: 'Недостаточно прав' });
     const { studentEmail } = req.body;
     if (!studentEmail) return res.status(400).json({ error: 'Email ученика обязателен' });
     const { rows: sr, rowCount } = await query(
@@ -1057,6 +1176,9 @@ app.post('/groups/:id/members', authRequired, async (req, res) => {
 app.delete('/groups/:id/members/:studentId', authRequired, async (req, res) => {
   try {
     if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
+    const own = await query('select teacher_id from groups where id=$1', [req.params.id]);
+    if (!own.rowCount) return res.status(404).json({ error: 'Группа не найдена' });
+    if (!canManageEntity(own.rows[0].teacher_id, req)) return res.status(403).json({ error: 'Недостаточно прав' });
     await query('delete from group_members where group_id=$1 and student_id=$2', [req.params.id, req.params.studentId]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Ошибка' }); }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -52,13 +52,16 @@ export function Messenger() {
       if (!t) return;
       const res = await fetch('/api/groups', { headers: { Authorization: `Bearer ${t}` } });
       const d = await res.json();
-      const base = [{ id: 'general', name: 'Общий чат', memberCount: 0 }];
-      const dynamic = (d.groups || []).map((g: any) => ({ id: g.id, name: g.name, memberCount: Number(g.memberCount || 0) }));
-      const all = [...base, ...dynamic.filter((g: any) => g.id !== 'general')];
+      const all = (d.groups || []).map((g: any) => ({ id: g.id, name: g.name, memberCount: Number(g.memberCount || 0) }));
       setGroups(all);
-      if (!all.find((g: any) => g.id === selectedGroup)) setSelectedGroup('general');
+      if (all.length === 0) {
+        setSelectedGroup('');
+        setMessages([]);
+      } else if (!all.find((g: any) => g.id === selectedGroup)) {
+        setSelectedGroup(all[0].id);
+      }
     } catch {
-      setGroups([{ id: 'general', name: 'Общий чат', memberCount: 0 }]);
+      setGroups([]);
     }
   };
 
@@ -68,14 +71,14 @@ export function Messenger() {
       if (!t) return;
       const data = await api.getMessages(selectedGroup, t);
       setMessages(data.messages || []);
-    } catch (error) {
-      console.error('Error loading messages:', error);
+    } catch {
+      setMessages([]);
     }
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || !selectedGroup) return;
 
     try {
       const t = await getToken();
@@ -159,7 +162,7 @@ export function Messenger() {
         <h1 className="text-3xl md:text-4xl font-bold mb-6">💬 Мессенджер</h1>
 
         <div className="grid md:grid-cols-[300px_1fr] gap-6 h-[calc(100vh-250px)]">
-          <Card className="p-4">
+          <Card className="p-4 bg-card border-border">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold">Группы</h2>
               <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
@@ -193,14 +196,19 @@ export function Messenger() {
               </Dialog>
             </div>
             <div className="space-y-2">
+              {groups.length === 0 && (
+                <div className="text-sm text-muted-foreground py-6 text-center">
+                  У вас пока нет доступных чатов
+                </div>
+              )}
               {groups.map((group) => (
                 <button
                   key={group.id}
                   onClick={() => setSelectedGroup(group.id)}
-                  className={`w-full text-left p-3 rounded-lg transition-colors ${
+                  className={`w-full text-left p-3 rounded-lg transition-colors border ${
                     selectedGroup === group.id
-                      ? 'bg-purple-600 text-white'
-                      : 'hover:bg-slate-100'
+                      ? 'bg-accent text-accent-foreground border-accent'
+                      : 'hover:bg-muted/60 border-transparent'
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -215,10 +223,10 @@ export function Messenger() {
             </div>
           </Card>
 
-          <Card className="flex flex-col">
+          <Card className="flex flex-col bg-card border-border">
             <div className="p-4 border-b">
               <h2 className="text-xl font-bold">
-                {groups.find((g) => g.id === selectedGroup)?.name}
+                {groups.find((g) => g.id === selectedGroup)?.name || 'Чат'}
               </h2>
             </div>
 
@@ -232,8 +240,8 @@ export function Messenger() {
                     <div
                       className={`max-w-[76%] rounded-2xl p-4 ${
                         message.userId === user?.id
-                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
-                          : 'bg-slate-100'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted'
                       }`}
                     >
                       {message.userId !== user?.id && (
@@ -308,9 +316,14 @@ export function Messenger() {
                     </div>
                   </div>
                 ))}
-                {messages.length === 0 && (
-                  <div className="text-center text-slate-400 py-12">
+                {selectedGroup && messages.length === 0 && (
+                  <div className="text-center text-muted-foreground py-12">
                     Пока нет сообщений. Начни общение!
+                  </div>
+                )}
+                {!selectedGroup && (
+                  <div className="text-center text-muted-foreground py-12">
+                    Выберите чат из списка слева
                   </div>
                 )}
               </div>
@@ -334,8 +347,9 @@ export function Messenger() {
                   onChange={(e) => setNewMessage(e.target.value)}
                   placeholder="Напиши сообщение..."
                   className="flex-1"
+                  disabled={!selectedGroup}
                 />
-                <Button type="submit" size="icon" disabled={!newMessage.trim()}>
+                <Button type="submit" size="icon" disabled={!newMessage.trim() || !selectedGroup}>
                   <Send className="w-5 h-5" />
                 </Button>
               </div>

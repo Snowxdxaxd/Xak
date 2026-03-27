@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -6,7 +6,7 @@ import { Card } from '../components/ui/card';
 import { Progress } from '../components/ui/progress';
 import { Badge } from '../components/ui/badge';
 import { supabase, api } from '../lib/supabase';
-import { BarChart3, BookOpen, CheckCircle2, Flame, TrendingUp, Award } from 'lucide-react';
+import { BarChart3, BookOpen, CheckCircle2, Flame, TrendingUp, Award, Trophy, GraduationCap, Star, Crown, Sparkles, Footprints, Medal } from 'lucide-react';
 
 export function Profile() {
   const params = useParams();
@@ -128,18 +128,45 @@ export function Profile() {
             {/* Achievements */}
             <Card className="p-5 mb-6">
               <h2 className="font-semibold mb-4 flex items-center gap-2">
-                <Award className="w-4 h-4 text-muted-foreground" /> Ачивки
+                <Award className="w-4 h-4 text-yellow-500" /> Достижения
+                {(progress.achievements || []).length > 0 && (
+                  <Badge variant="secondary" className="ml-auto text-xs">{(progress.achievements || []).length}</Badge>
+                )}
               </h2>
               {(progress.achievements || []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">Пока нет достижений</p>
+                <div className="text-center py-6">
+                  <Trophy className="w-10 h-10 mx-auto mb-2 text-muted-foreground/30" />
+                  <p className="text-sm text-muted-foreground">Пока нет достижений. Проходи уроки и курсы!</p>
+                </div>
               ) : (
-                <div className="grid sm:grid-cols-2 gap-2">
-                  {(progress.achievements || []).map((a: any) => (
-                    <div key={a.id} className="border rounded-lg p-3">
-                      <p className="text-sm font-medium">{a.title}</p>
-                      <p className="text-xs text-muted-foreground">{a.description}</p>
-                    </div>
-                  ))}
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {(progress.achievements || []).map((a: any) => {
+                    const IconMap: Record<string, any> = {
+                      'crown': Crown,
+                      'sparkles': Sparkles,
+                      'graduation-cap': GraduationCap,
+                      'trophy': Trophy,
+                      'star': Star,
+                      'footprints': Footprints,
+                    };
+                    const Icon = IconMap[a.icon] || Medal;
+                    return (
+                      <div key={a.id} className="flex items-start gap-3 border rounded-xl p-3 bg-muted/30 hover:bg-muted/50 transition-colors">
+                        <div className="w-9 h-9 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center flex-shrink-0">
+                          <Icon className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold">{a.title}</p>
+                          <p className="text-xs text-muted-foreground">{a.description}</p>
+                          {a.earnedAt && (
+                            <p className="text-xs text-muted-foreground/60 mt-0.5">
+                              {new Date(a.earnedAt).toLocaleDateString('ru-RU')}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </Card>
