@@ -189,6 +189,17 @@ create table if not exists quiz_attempts (
   created_at timestamptz not null default now()
 );
 
+-- ─── Class meetings (video calls via Jitsi) ──────────────────────────────────
+create table if not exists class_meetings (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid references groups(id) on delete cascade,
+  room_id text not null,
+  started_by uuid references app_users(id) on delete set null,
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  is_active boolean not null default true
+);
+
 -- ─── Group ↔ Course assignments ───────────────────────────────────────────────
 -- Linking a class (group) to a private course grants all class members access
 create table if not exists group_courses (

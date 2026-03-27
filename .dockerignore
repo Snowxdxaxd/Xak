@@ -1,10 +1,31 @@
+# Dependencies (reinstalled inside Docker)
 node_modules/
+
+# Built output (rebuilt inside Docker)
 dist/
+
+# Secrets — never bake into the image
 .env
+.env.local
+.env.*.local
+
+# Version control
 .git/
 .gitignore
+
+# Logs
 *.log
-*.md
+npm-debug.log*
+
+# Dev/docs folders (not needed in production image)
 guidelines/
 supabase/
-ИНСТРУКЦИЯ*.txt
+utils/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Markdown (not needed at runtime)
+*.md
+ATTRIBUTIONS.md

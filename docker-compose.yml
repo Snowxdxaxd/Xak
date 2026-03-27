@@ -9,19 +9,27 @@ services:
       POSTGRES_DB: codekids
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Schema + pgcrypto extension run only on first init (empty data volume)
+      # schema.sql runs ONLY on first init (when the data volume is empty)
       - ./server/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
-      # Demo seed users/courses/classes are created by the app on first startup
+    # Expose DB port to the host (optional — useful for connecting with DBeaver/pgAdmin)
     ports:
       - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d codekids"]
       interval: 5s
       timeout: 5s
-      retries: 15
+      retries: 20
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: codekids-app
     restart: unless-stopped
     depends_on:
@@ -31,10 +39,12 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://postgres:postgres@db:5432/codekids
       API_PORT: 4000
-      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+      # JWT secret — override in production with a strong random string
+      JWT_SECRET: ${JWT_SECRET:-codekids-dev-secret-change-in-production-32chars}
+      # Root superadmin account (created/updated on every startup)
       ROOT_ADMIN_EMAIL: ${ROOT_ADMIN_EMAIL:-admin@codekids.local}
       ROOT_ADMIN_PASSWORD: ${ROOT_ADMIN_PASSWORD:-Admin12345!}
-      # Email (optional — leave empty to disable email verification)
+      # SMTP — leave empty to use console fallback (codes printed to server log)
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -42,6 +52,19 @@ services:
       SMTP_FROM: ${SMTP_FROM:-noreply@codekids.local}
     ports:
       - "4000:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   postgres_data:
+    # Named volume — data persists between `docker compose down` restarts.
+    # Use `docker compose down -v` to fully wipe the database.

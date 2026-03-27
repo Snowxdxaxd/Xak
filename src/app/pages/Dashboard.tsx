@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { BookOpen, Flame, CheckCircle2, BarChart3, ArrowRight } from 'lucide-react';
+import { BookOpen, Flame, CheckCircle2, BarChart3, ArrowRight, Video } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Progress } from '../components/ui/progress';
@@ -15,6 +15,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const [progress, setProgress] = useState<any>(null);
   const [courses, setCourses] = useState<any[]>([]);
+  const [activeMeetings, setActiveMeetings] = useState<any[]>([]);
 
   useEffect(() => { if (!loading && !user) navigate('/login'); }, [user, loading, navigate]);
 
@@ -26,6 +27,15 @@ export function Dashboard() {
       if (session?.access_token) {
         const pd = await api.getUserProgress(session.access_token);
         if (pd && !pd.error) setProgress(pd);
+        // Load active meetings for students
+        if (userRole === 'student') {
+          try {
+            const mr = await fetch('/api/student/active-meetings', {
+              headers: { Authorization: `Bearer ${session.access_token}` },
+            });
+            if (mr.ok) { const md = await mr.json(); setActiveMeetings(md.meetings || []); }
+          } catch {}
+        }
       }
       const cd = await api.getCourses();
       setCourses(cd.courses || []);
@@ -60,6 +70,39 @@ export function Dashboard() {
             {isTeacher ? 'Управляй курсами и проверяй задания' : 'Продолжи с того места, где остановился'}
           </p>
         </motion.div>
+
+        {/* Active meeting banners for students */}
+        {!isTeacher && activeMeetings.length > 0 && (
+          <div className="mb-6 space-y-2">
+            {activeMeetings.map((m: any) => (
+              <motion.div
+                key={m.groupId}
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <div className="flex items-center justify-between p-4 rounded-xl border border-green-500/30 bg-green-500/5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-green-500/10 flex items-center justify-center flex-shrink-0">
+                      <Video className="w-4 h-4 text-green-500" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-sm">Урок идёт прямо сейчас!</p>
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                      </div>
+                      <p className="text-xs text-muted-foreground">Класс: {m.groupName}</p>
+                    </div>
+                  </div>
+                  <Link to={`/meeting/${m.groupId}`}>
+                    <Button size="sm" className="gap-1.5 bg-green-600 hover:bg-green-700 text-white">
+                      <Video className="w-3.5 h-3.5" /> Подключиться
+                    </Button>
+                  </Link>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
 
         {/* Stats — только для учеников */}
         {!isTeacher && (

@@ -1,39 +1,45 @@
-# ─── Stage 1: Build frontend ─────────────────────────────────────────────────
+# ─── Stage 1: Build frontend ──────────────────────────────────────────────────
 FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
-# Use npm install so new deps in package.json are picked up automatically
-RUN npm install --frozen-lockfile || npm install
+# Copy manifests first (better layer caching)
+COPY package.json package-lock.json ./
 
+# npm ci uses lockfile for reproducible installs.
+# npm 7+ auto-installs peer dependencies (React etc.)
+RUN npm ci || npm install
+
+# Copy source and build
 COPY . .
 
-# Build the Vite frontend
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
 RUN npm run build
 
-# ─── Stage 2: Production image ───────────────────────────────────────────────
+# ─── Stage 2: Production image ────────────────────────────────────────────────
 FROM node:22-alpine AS runner
 
 WORKDIR /app
 
-# Install only production deps for the server
-COPY package*.json ./
-RUN npm install --omit=dev || npm install --omit=dev --ignore-scripts
+# Install production server dependencies only
+COPY package.json package-lock.json ./
 
-# Copy built frontend assets
+RUN npm ci --omit=dev || npm install --omit=dev
+
+# Copy built frontend
 COPY --from=builder /app/dist ./dist
 
-# Copy server sources
+# Copy server source
 COPY server/ ./server/
-
-# Copy env example as fallback (real .env should be mounted or passed via env)
-COPY .env.example .env.example
 
 EXPOSE 4000
 
 ENV NODE_ENV=production
+
+# Health check — app answers on /api/healthz
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget -qO- http://localhost:4000/healthz || exit 1
 
 CMD ["node", "server/index.js"]

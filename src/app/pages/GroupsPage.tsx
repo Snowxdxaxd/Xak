@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
@@ -15,7 +15,7 @@ import { toast } from 'sonner';
 import {
   Users, Plus, Pencil, Trash2, UserPlus, UserMinus,
   BarChart3, BookOpen, ChevronDown, ChevronRight, Loader2,
-  Lock, Globe, Link2Off,
+  Lock, Link2Off, Video, PhoneOff,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -30,6 +30,8 @@ export function GroupsPage() {
   const [activeTab, setActiveTab] = useState<Record<string, Tab>>({});
   const [members, setMembers] = useState<Record<string, any[]>>({});
   const [groupCourses, setGroupCourses] = useState<Record<string, any[]>>({});
+  const [meetingStatus, setMeetingStatus] = useState<Record<string, any>>({});
+  const [meetingLoading, setMeetingLoading] = useState<Record<string, boolean>>({});
 
   // Grade management
   const [gradeStudent, setGradeStudent] = useState<any | null>(null);
@@ -55,6 +57,14 @@ export function GroupsPage() {
 
   useEffect(() => { if (user) { loadGroups(); loadAllCourses(); } }, [user]);
 
+  // Poll meeting statuses every 15s for all loaded groups
+  useEffect(() => {
+    if (!groups.length) return;
+    loadAllMeetingStatuses();
+    const timer = setInterval(loadAllMeetingStatuses, 15000);
+    return () => clearInterval(timer);
+  }, [groups.length]);
+
   const getToken = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token || null;
@@ -65,6 +75,49 @@ export function GroupsPage() {
     const r = await fetch('/api/groups', { headers: { Authorization: `Bearer ${t}` } });
     const d = await r.json();
     setGroups(d.groups || []);
+  };
+
+  const loadAllMeetingStatuses = async () => {
+    const t = await getToken(); if (!t) return;
+    const statuses: Record<string, any> = {};
+    await Promise.all(
+      groups.map(async (g) => {
+        try {
+          const r = await fetch(`/api/groups/${g.id}/meeting`, { headers: { Authorization: `Bearer ${t}` } });
+          if (r.ok) { const d = await r.json(); statuses[g.id] = d.meeting || null; }
+          else statuses[g.id] = null;
+        } catch { statuses[g.id] = null; }
+      })
+    );
+    setMeetingStatus(statuses);
+  };
+
+  const handleStartMeeting = async (groupId: string) => {
+    const t = await getToken(); if (!t) return;
+    setMeetingLoading(p => ({ ...p, [groupId]: true }));
+    try {
+      const r = await fetch(`/api/groups/${groupId}/meeting`, {
+        method: 'POST', headers: { Authorization: `Bearer ${t}` },
+      });
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.error); return; }
+      toast.success('Урок начат! Ученики получили уведомление.');
+      navigate(`/meeting/${groupId}`);
+    } catch { toast.error('Ошибка'); }
+    finally { setMeetingLoading(p => ({ ...p, [groupId]: false })); }
+  };
+
+  const handleEndMeeting = async (groupId: string) => {
+    const t = await getToken(); if (!t) return;
+    setMeetingLoading(p => ({ ...p, [groupId]: true }));
+    try {
+      await fetch(`/api/groups/${groupId}/meeting`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${t}` },
+      });
+      toast.success('Урок завершён');
+      setMeetingStatus(p => ({ ...p, [groupId]: null }));
+    } catch { toast.error('Ошибка'); }
+    finally { setMeetingLoading(p => ({ ...p, [groupId]: false })); }
   };
 
   const loadAllCourses = async () => {
@@ -300,7 +353,15 @@ export function GroupsPage() {
                           <Users className="w-4 h-4 text-muted-foreground" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-sm">{g.name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-sm">{g.name}</p>
+                            {meetingStatus[g.id] && (
+                              <span className="flex items-center gap-1 text-xs text-green-500 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                                В эфире
+                              </span>
+                            )}
+                          </div>
                           {g.description && <p className="text-xs text-muted-foreground truncate">{g.description}</p>}
                         </div>
                         <Badge variant="secondary" className="text-xs flex-shrink-0">
@@ -311,7 +372,41 @@ export function GroupsPage() {
                           : <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
                       </button>
                       {/* Actions */}
-                      <div className="flex gap-1 flex-shrink-0">
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {/* Meeting button */}
+                        {meetingStatus[g.id] ? (
+                          <div className="flex items-center gap-1">
+                            <Link to={`/meeting/${g.id}`}>
+                              <Button size="sm" variant="default" className="h-7 gap-1.5 text-xs bg-green-600 hover:bg-green-700">
+                                <Video className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Войти</span>
+                              </Button>
+                            </Link>
+                            <Button
+                              size="sm" variant="ghost"
+                              className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                              title="Завершить урок"
+                              disabled={meetingLoading[g.id]}
+                              onClick={() => handleEndMeeting(g.id)}
+                            >
+                              <PhoneOff className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            size="sm" variant="outline"
+                            className="h-7 gap-1.5 text-xs"
+                            title="Начать онлайн-урок"
+                            disabled={meetingLoading[g.id]}
+                            onClick={() => handleStartMeeting(g.id)}
+                          >
+                            {meetingLoading[g.id]
+                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              : <Video className="w-3.5 h-3.5" />
+                            }
+                            <span className="hidden sm:inline">Урок</span>
+                          </Button>
+                        )}
                         <Button variant="ghost" size="icon" className="w-8 h-8" title="Добавить ученика"
                           onClick={() => setAddMemberGroupId(g.id)}>
                           <UserPlus className="w-3.5 h-3.5" />

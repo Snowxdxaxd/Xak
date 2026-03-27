@@ -23,6 +23,10 @@ const SMTP_FROM = process.env.SMTP_FROM || 'noreply@codekids.local';
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+
+// Health check — used by Docker HEALTHCHECK and load balancers
+app.get('/healthz', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+
 app.use((req, _res, next) => {
   if (req.path.startsWith('/api/')) {
     req.url = req.url.slice(4);
@@ -290,6 +294,16 @@ async function ensureSchemaCompat() {
       student_id uuid references app_users(id) on delete cascade,
       enrolled_at timestamptz not null default now(),
       primary key (course_id, student_id)
+    )`,
+    // class_meetings: video call sessions per group
+    `create table if not exists class_meetings (
+      id uuid primary key default gen_random_uuid(),
+      group_id uuid references groups(id) on delete cascade,
+      room_id text not null,
+      started_by uuid references app_users(id) on delete set null,
+      started_at timestamptz not null default now(),
+      ended_at timestamptz,
+      is_active boolean not null default true
     )`,
     // group_courses: class ↔ private course linking
     `create table if not exists group_courses (
@@ -1703,6 +1717,117 @@ app.delete('/groups/:id/courses/:courseId', authRequired, async (req, res) => {
       }
     }
     res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
+});
+
+// ─── Class Meetings (Jitsi video calls) ──────────────────────────────────────
+
+// Get active meeting for a group (teacher or group member)
+app.get('/groups/:id/meeting', authRequired, async (req, res) => {
+  try {
+    const userId = req.user.sub;
+    const role = req.user.user_metadata?.role;
+    const groupId = req.params.id;
+
+    const groupRow = await query('select id, name, teacher_id from groups where id=$1', [groupId]);
+    if (!groupRow.rowCount) return res.status(404).json({ error: 'Класс не найден' });
+    const group = groupRow.rows[0];
+
+    // Access control
+    if (role !== 'superadmin') {
+      if (role === 'teacher' && group.teacher_id !== userId) {
+        return res.status(403).json({ error: 'Нет доступа к этому классу' });
+      }
+      if (role === 'student') {
+        const isMember = await query(
+          'select 1 from group_members where group_id=$1 and student_id=$2', [groupId, userId]
+        );
+        if (!isMember.rowCount) return res.status(403).json({ error: 'Вы не состоите в этом классе' });
+      }
+    }
+
+    const { rows } = await query(
+      `select id, room_id as "roomId", started_at as "startedAt", is_active as "isActive"
+       from class_meetings where group_id=$1 and is_active=true
+       order by started_at desc limit 1`,
+      [groupId]
+    );
+    res.json({ meeting: rows[0] || null, group: { id: group.id, name: group.name } });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
+});
+
+// Start a meeting (teacher only)
+app.post('/groups/:id/meeting', authRequired, async (req, res) => {
+  try {
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель может начать урок' });
+    const groupId = req.params.id;
+
+    const groupRow = await query('select id, name, teacher_id from groups where id=$1', [groupId]);
+    if (!groupRow.rowCount) return res.status(404).json({ error: 'Класс не найден' });
+    if (!canManageEntity(groupRow.rows[0].teacher_id, req)) return res.status(403).json({ error: 'Нет доступа' });
+
+    // Return existing active meeting if any
+    const existing = await query(
+      'select room_id as "roomId" from class_meetings where group_id=$1 and is_active=true limit 1',
+      [groupId]
+    );
+    if (existing.rowCount) {
+      return res.json({ roomId: existing.rows[0].roomId, alreadyActive: true });
+    }
+
+    const roomId = `codekids-${groupId.replace(/-/g, '').slice(0, 8)}-${Date.now()}`;
+    await query(
+      'insert into class_meetings(group_id, room_id, started_by) values($1,$2,$3)',
+      [groupId, roomId, req.user.sub]
+    );
+
+    // Notify all group members
+    const { rows: members } = await query('select student_id from group_members where group_id=$1', [groupId]);
+    const groupName = groupRow.rows[0].name;
+    for (const m of members) {
+      await addNotification(
+        m.student_id, 'system', 'Урок начался!',
+        `Преподаватель начал урок в классе «${groupName}». Подключайся!`,
+        { meetingUrl: `/meeting/${groupId}` }
+      );
+    }
+    res.json({ roomId });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
+});
+
+// End a meeting (teacher only)
+app.delete('/groups/:id/meeting', authRequired, async (req, res) => {
+  try {
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    const groupId = req.params.id;
+
+    const groupRow = await query('select teacher_id from groups where id=$1', [groupId]);
+    if (!groupRow.rowCount) return res.status(404).json({ error: 'Класс не найден' });
+    if (!canManageEntity(groupRow.rows[0].teacher_id, req)) return res.status(403).json({ error: 'Нет доступа' });
+
+    await query(
+      'update class_meetings set is_active=false, ended_at=now() where group_id=$1 and is_active=true',
+      [groupId]
+    );
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
+});
+
+// Get active meetings for the current student's groups
+app.get('/student/active-meetings', authRequired, async (req, res) => {
+  try {
+    const userId = req.user.sub;
+    const { rows } = await query(
+      `select cm.id, cm.room_id as "roomId", cm.started_at as "startedAt",
+              g.id as "groupId", g.name as "groupName"
+       from class_meetings cm
+       join groups g on g.id=cm.group_id
+       join group_members gm on gm.group_id=g.id
+       where gm.student_id=$1 and cm.is_active=true
+       order by cm.started_at desc`,
+      [userId]
+    );
+    res.json({ meetings: rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
 });
 
