@@ -109,7 +109,7 @@ export function CourseView() {
   );
 
   const lessons: any[] = (course.lessons || []).sort((a: any, b: any) => a.order - b.order);
-  const isTeacher = userRole === 'teacher';
+  const isTeacher = userRole === 'teacher' || userRole === 'superadmin';
 
   return (
     <Layout>

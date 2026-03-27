@@ -9,6 +9,8 @@ import { query } from './db.js';
 const app = express();
 const PORT = Number(process.env.API_PORT || 4000);
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
+const ROOT_ADMIN_EMAIL = process.env.ROOT_ADMIN_EMAIL || 'admin@codekids.local';
+const ROOT_ADMIN_PASSWORD = process.env.ROOT_ADMIN_PASSWORD || 'Admin12345!';
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
@@ -40,6 +42,12 @@ function authRequired(req, res, next) {
 
 function isTeacher(req) { return req.user?.user_metadata?.role === 'teacher'; }
 function isParent(req)  { return req.user?.user_metadata?.role === 'parent'; }
+function isSuperAdmin(req) { return req.user?.user_metadata?.role === 'superadmin'; }
+function isTeacherOrAdmin(req) { return isTeacher(req) || isSuperAdmin(req); }
+
+function canManageEntity(ownerId, req) {
+  return isSuperAdmin(req) || ownerId === req.user?.sub;
+}
 
 async function addNotification(userId, type, title, message, data = {}) {
   try {
@@ -75,7 +83,54 @@ async function awardXP(userId, xp, reason) {
   if (leveled) {
     await addNotification(userId, 'achievement', 'Новый уровень!', `Поздравляем! Вы достигли уровня ${p.level}.`, { level: p.level });
   }
+  if (p.level >= 5) {
+    await grantAchievement(userId, {
+      id: 'level-5',
+      title: 'Пятый уровень',
+      description: 'Достигнуть 5 уровня профиля',
+      icon: 'crown',
+    });
+  }
   return p;
+}
+
+async function grantAchievement(userId, achievement) {
+  const { rows, rowCount } = await query(
+    'select achievements from user_progress where user_id=$1',
+    [userId]
+  );
+  if (!rowCount) {
+    await query('insert into user_progress(user_id) values($1) on conflict do nothing', [userId]);
+  }
+  const list = rowCount ? (rows[0].achievements || []) : [];
+  if (list.some((a) => a?.id === achievement.id)) return false;
+  const next = [...list, { ...achievement, earnedAt: new Date().toISOString() }];
+  await query('update user_progress set achievements=$1, updated_at=now() where user_id=$2', [JSON.stringify(next), userId]);
+  await addNotification(userId, 'achievement', 'Новая ачивка!', `Вы получили достижение "${achievement.title}"`, { achievementId: achievement.id });
+  return true;
+}
+
+async function ensureRootAdmin() {
+  try {
+    const { rowCount } = await query('select id from app_users where email=$1', [ROOT_ADMIN_EMAIL]);
+    if (rowCount) return;
+    const hash = await bcrypt.hash(ROOT_ADMIN_PASSWORD, 10);
+    await query(
+      'insert into app_users(email,password_hash,user_metadata) values($1,$2,$3)',
+      [ROOT_ADMIN_EMAIL, hash, JSON.stringify({ name: 'Главный администратор', role: 'superadmin' })]
+    );
+    console.log(`[bootstrap] Root admin created: ${ROOT_ADMIN_EMAIL}`);
+  } catch (err) {
+    console.error('[bootstrap] Failed to create root admin', err);
+  }
+}
+
+async function ensureSchemaCompat() {
+  try {
+    await query('alter table if exists messages add column if not exists edited_at timestamptz');
+  } catch (err) {
+    console.error('[bootstrap] schema compat failed', err);
+  }
 }
 
 // ─── health ──────────────────────────────────────────────────────────────────
@@ -310,7 +365,7 @@ app.get('/courses/:id', async (req, res) => {
 
 app.post('/courses', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const { title, description, level = 'beginner' } = req.body;
     if (!title || !description) return res.status(400).json({ error: 'Название и описание обязательны' });
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -323,10 +378,10 @@ app.post('/courses', authRequired, async (req, res) => {
 
 app.put('/courses/:id', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const check = await query('select created_by from courses where id=$1', [req.params.id]);
     if (!check.rowCount) return res.status(404).json({ error: 'Курс не найден' });
-    if (check.rows[0].created_by !== req.user.sub) return res.status(403).json({ error: 'Вы не создатель этого курса' });
+    if (!canManageEntity(check.rows[0].created_by, req)) return res.status(403).json({ error: 'Недостаточно прав' });
     const { title, description, level } = req.body;
     await query(
       'update courses set title=coalesce($1,title), description=coalesce($2,description), level=coalesce($3,level) where id=$4',
@@ -339,10 +394,10 @@ app.put('/courses/:id', authRequired, async (req, res) => {
 
 app.delete('/courses/:id', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const check = await query('select created_by from courses where id=$1', [req.params.id]);
     if (!check.rowCount) return res.status(404).json({ error: 'Курс не найден' });
-    if (check.rows[0].created_by !== req.user.sub) return res.status(403).json({ error: 'Вы не создатель этого курса' });
+    if (!canManageEntity(check.rows[0].created_by, req)) return res.status(403).json({ error: 'Недостаточно прав' });
     await query('delete from quiz_questions where lesson_id in (select id from lessons where course_id=$1)', [req.params.id]);
     await query('delete from lesson_completions where lesson_id in (select id from lessons where course_id=$1)', [req.params.id]);
     await query('delete from lessons where course_id=$1', [req.params.id]);
@@ -368,12 +423,13 @@ app.get('/lessons/:id', async (req, res) => {
 
 app.post('/lessons', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const { courseId, title, description='', content='', order=0, hasAssignment=false, checkMode='manual', answerKey='' } = req.body;
     if (!title) return res.status(400).json({ error: 'Название обязательно' });
     if (courseId) {
-      const owns = await query('select id from courses where id=$1 and created_by=$2', [courseId, req.user.sub]);
-      if (!owns.rowCount) return res.status(403).json({ error: 'Вы не создатель этого курса' });
+      const owns = await query('select id,created_by from courses where id=$1', [courseId]);
+      if (!owns.rowCount) return res.status(404).json({ error: 'Курс не найден' });
+      if (!canManageEntity(owns.rows[0].created_by, req)) return res.status(403).json({ error: 'Недостаточно прав для курса' });
     }
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     await query(
@@ -389,10 +445,10 @@ app.post('/lessons', authRequired, async (req, res) => {
 
 app.put('/lessons/:id', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const check = await query('select created_by from lessons where id=$1', [req.params.id]);
     if (!check.rowCount) return res.status(404).json({ error: 'Урок не найден' });
-    if (check.rows[0].created_by !== req.user.sub) return res.status(403).json({ error: 'Вы не создатель этого урока' });
+    if (!canManageEntity(check.rows[0].created_by, req)) return res.status(403).json({ error: 'Недостаточно прав' });
     const { title, description, content, order, hasAssignment, checkMode, answerKey } = req.body;
     await query(
       `update lessons set
@@ -412,10 +468,10 @@ app.put('/lessons/:id', authRequired, async (req, res) => {
 
 app.delete('/lessons/:id', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const { rows } = await query('select course_id,created_by from lessons where id=$1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Урок не найден' });
-    if (rows[0].created_by !== req.user.sub) return res.status(403).json({ error: 'Вы не создатель этого урока' });
+    if (!canManageEntity(rows[0].created_by, req)) return res.status(403).json({ error: 'Недостаточно прав' });
     if (rows[0].course_id) await query('update courses set lessons_count=greatest(0,lessons_count-1) where id=$1', [rows[0].course_id]);
     await query('delete from quiz_questions where lesson_id=$1', [req.params.id]);
     await query('delete from lesson_completions where lesson_id=$1', [req.params.id]);
@@ -439,7 +495,7 @@ app.get('/lessons/:id/quiz', async (req, res) => {
 
 app.get('/lessons/:id/quiz-full', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const { rows } = await query(
       `select id,question,type,options,correct_answer as "correctAnswer",points,order_num as "orderNum"
        from quiz_questions where lesson_id=$1 order by order_num asc`,
@@ -451,7 +507,7 @@ app.get('/lessons/:id/quiz-full', authRequired, async (req, res) => {
 
 app.post('/lessons/:id/quiz', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const { question, type='single', options=[], correctAnswer, points=10, orderNum=0 } = req.body;
     if (!question || correctAnswer === undefined) return res.status(400).json({ error: 'Вопрос и правильный ответ обязательны' });
     const id = randomUUID();
@@ -465,7 +521,7 @@ app.post('/lessons/:id/quiz', authRequired, async (req, res) => {
 
 app.delete('/lessons/:lessonId/quiz/:questionId', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     await query('delete from quiz_questions where id=$1 and lesson_id=$2', [req.params.questionId, req.params.lessonId]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Ошибка' }); }
@@ -494,6 +550,14 @@ app.post('/lessons/:id/quiz-attempt', authRequired, async (req, res) => {
     );
     if (maxScore > 0 && score > 0) {
       await awardXP(req.user.sub, score, 'quiz');
+    }
+    if (maxScore > 0 && score === maxScore) {
+      await grantAchievement(req.user.sub, {
+        id: 'perfect-score',
+        title: 'Идеальный балл',
+        description: 'Получить оценку 100 за задание или тест',
+        icon: 'sparkles',
+      });
     }
     res.json({ score, maxScore, results, percentage: maxScore > 0 ? Math.round((score/maxScore)*100) : 0 });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
@@ -559,10 +623,16 @@ app.get('/submissions/pending', authRequired, async (req, res) => {
 
 app.post('/submissions/:id/grade', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const { grade, feedback } = req.body;
-    const { rows: sr, rowCount } = await query('select user_id,lesson_id from submissions where id=$1', [req.params.id]);
+    const { rows: sr, rowCount } = await query('select user_id,lesson_id,course_id from submissions where id=$1', [req.params.id]);
     if (!rowCount) return res.status(404).json({ error: 'Задание не найдено' });
+    if (!isSuperAdmin(req) && sr[0].course_id) {
+      const owner = await query('select created_by from courses where id=$1', [sr[0].course_id]);
+      if (owner.rowCount && owner.rows[0].created_by !== req.user.sub) {
+        return res.status(403).json({ error: 'Это не ваш курс' });
+      }
+    }
     const status = Number(grade) >= 60 ? 'passed' : 'failed';
     await query(
       'update submissions set grade=$1,feedback=$2,status=$3,graded_by=$4,graded_at=now() where id=$5',
@@ -572,6 +642,14 @@ app.post('/submissions/:id/grade', authRequired, async (req, res) => {
     const lessonTitle = lr[0]?.title || 'Задание';
     const xpGain = status === 'passed' ? 30 : 0;
     if (xpGain > 0) await awardXP(sr[0].user_id, xpGain, 'assignment_graded');
+    if (Number(grade) === 100) {
+      await grantAchievement(sr[0].user_id, {
+        id: 'perfect-score',
+        title: 'Идеальный балл',
+        description: 'Получить оценку 100 за задание или тест',
+        icon: 'sparkles',
+      });
+    }
     await addNotification(
       sr[0].user_id, 'grade',
       status === 'passed' ? 'Задание принято!' : 'Задание возвращено',
@@ -613,6 +691,32 @@ app.post('/lessons/:id/complete', authRequired, async (req, res) => {
     await query('insert into lesson_completions(user_id,lesson_id) values($1,$2)', [req.user.sub, req.params.id]);
     const p = await awardXP(req.user.sub, 50, 'lesson_complete');
     await query('update user_progress set completed_lessons=completed_lessons+1 where user_id=$1', [req.user.sub]);
+    const { rows: pr } = await query('select completed_lessons from user_progress where user_id=$1', [req.user.sub]);
+    const completedLessons = Number(pr[0]?.completed_lessons || 0);
+    if (completedLessons >= 1) {
+      await grantAchievement(req.user.sub, {
+        id: 'first-lesson',
+        title: 'Первый шаг',
+        description: 'Пройти первый урок',
+        icon: 'flag',
+      });
+    }
+    if (completedLessons >= 5) {
+      await grantAchievement(req.user.sub, {
+        id: 'five-lessons',
+        title: 'В ритме обучения',
+        description: 'Пройти 5 уроков',
+        icon: 'zap',
+      });
+    }
+    if (completedLessons >= 10) {
+      await grantAchievement(req.user.sub, {
+        id: 'ten-lessons',
+        title: 'Десять из десяти',
+        description: 'Пройти 10 уроков',
+        icon: 'award',
+      });
+    }
     const { rows: lr } = await query('select title from lessons where id=$1', [req.params.id]);
     await addNotification(req.user.sub, 'system', 'Урок пройден!', `Вы завершили урок "${lr[0]?.title || ''}" и получили 50 XP!`, { xp: 50 });
     res.json({ xpGained: 50, level: p.level, xp: p.xp, xpToNextLevel: p.xp_to_next_level });
@@ -679,7 +783,8 @@ app.get('/messages/:groupId', authRequired, async (req, res) => {
   try {
     const { rows } = await query(
       `select id,group_id as "groupId",user_id as "userId",user_name as "userName",
-        text,created_at as "createdAt" from messages where group_id=$1 order by created_at asc`,
+        text,created_at as "createdAt", edited_at as "editedAt"
+       from messages where group_id=$1 order by created_at asc`,
       [req.params.groupId]
     );
     res.json({ messages: rows });
@@ -696,10 +801,43 @@ app.post('/messages', authRequired, async (req, res) => {
       [id, groupId, req.user.sub, userName, text]);
     const { rows } = await query(
       `select id,group_id as "groupId",user_id as "userId",user_name as "userName",
-        text,created_at as "createdAt" from messages where id=$1`, [id]
+        text,created_at as "createdAt", edited_at as "editedAt"
+       from messages where id=$1`, [id]
     );
     res.json({ message: rows[0] });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка отправки сообщения' }); }
+});
+
+app.put('/messages/:id', authRequired, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text?.trim()) return res.status(400).json({ error: 'Текст обязателен' });
+    const { rows, rowCount } = await query('select user_id from messages where id=$1', [req.params.id]);
+    if (!rowCount) return res.status(404).json({ error: 'Сообщение не найдено' });
+    if (!isSuperAdmin(req) && rows[0].user_id !== req.user.sub) {
+      return res.status(403).json({ error: 'Недостаточно прав' });
+    }
+    await query('update messages set text=$1, edited_at=now() where id=$2', [text.trim(), req.params.id]);
+    const { rows: mr } = await query(
+      `select id,group_id as "groupId",user_id as "userId",user_name as "userName",
+        text,created_at as "createdAt", edited_at as "editedAt"
+       from messages where id=$1`,
+      [req.params.id]
+    );
+    res.json({ message: mr[0] });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка редактирования сообщения' }); }
+});
+
+app.delete('/messages/:id', authRequired, async (req, res) => {
+  try {
+    const { rows, rowCount } = await query('select user_id from messages where id=$1', [req.params.id]);
+    if (!rowCount) return res.status(404).json({ error: 'Сообщение не найдено' });
+    if (!isSuperAdmin(req) && rows[0].user_id !== req.user.sub) {
+      return res.status(403).json({ error: 'Недостаточно прав' });
+    }
+    await query('delete from messages where id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка удаления сообщения' }); }
 });
 
 // ─── progress ─────────────────────────────────────────────────────────────────
@@ -732,6 +870,95 @@ app.get('/leaderboard', async (_req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка лидерборда' }); }
 });
 
+app.get('/teacher/popularity', async (_req, res) => {
+  try {
+    const { rows } = await query(
+      `select
+        t.id as "teacherId",
+        coalesce(t.user_metadata->>'name', t.email) as "teacherName",
+        t.email as "teacherEmail",
+        count(distinct c.id) as "courseCount",
+        count(distinct lc.user_id) as "activeStudents",
+        count(lc.lesson_id) as "completedLessons",
+        (count(distinct c.id) * 10 + count(distinct lc.user_id) * 5 + count(lc.lesson_id))::int as "popularityScore"
+       from app_users t
+       left join courses c on c.created_by=t.id
+       left join lessons l on l.course_id=c.id
+       left join lesson_completions lc on lc.lesson_id=l.id
+       where t.user_metadata->>'role'='teacher'
+       group by t.id, t.email, t.user_metadata
+       order by "popularityScore" desc, "activeStudents" desc, "courseCount" desc
+       limit 100`
+    );
+    res.json({ teachers: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка рейтинга преподавателей' }); }
+});
+
+app.get('/users/:id/public-profile', authRequired, async (req, res) => {
+  try {
+    const { rows: ur, rowCount } = await query(
+      `select id,email,user_metadata from app_users where id=$1`,
+      [req.params.id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'Пользователь не найден' });
+    const user = ur[0];
+    const role = user.user_metadata?.role || 'student';
+    const { rows: pr } = await query(
+      `select level,xp,xp_to_next_level as "xpToNextLevel",
+        completed_lessons as "completedLessons",streak,achievements
+       from user_progress where user_id=$1`,
+      [req.params.id]
+    );
+    const progress = pr[0] || { level: 1, xp: 0, xpToNextLevel: 100, completedLessons: 0, streak: 0, achievements: [] };
+    const { rows: cr } = await query(
+      `select c.id,c.title,c.lessons_count as "lessonsCount",
+        count(lc.lesson_id) as "completedCount"
+       from courses c
+       left join lessons l on l.course_id=c.id
+       left join lesson_completions lc on lc.lesson_id=l.id and lc.user_id=$1
+       group by c.id
+       order by c.created_at desc
+       limit 8`,
+      [req.params.id]
+    );
+    res.json({
+      profile: {
+        id: user.id,
+        email: user.email,
+        name: user.user_metadata?.name || user.email,
+        role,
+        progress,
+        courses: cr,
+      },
+    });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка загрузки профиля' }); }
+});
+
+app.get('/admin/students', authRequired, async (req, res) => {
+  try {
+    if (!isSuperAdmin(req)) return res.status(403).json({ error: 'Только главный администратор' });
+    const { rows } = await query(
+      `select
+        u.id,
+        u.email,
+        u.user_metadata,
+        coalesce(up.level, 1) as level,
+        coalesce(up.xp, 0) as xp,
+        coalesce(up.xp_to_next_level, 100) as "xpToNextLevel",
+        coalesce(up.completed_lessons, 0) as "completedLessons",
+        coalesce(up.achievements, '[]'::jsonb) as achievements,
+        round(avg(s.grade) filter (where s.grade is not null), 1) as "avgGrade"
+       from app_users u
+       left join user_progress up on up.user_id=u.id
+       left join submissions s on s.user_id=u.id
+       where coalesce(u.user_metadata->>'role','student')='student'
+       group by u.id, up.level, up.xp, up.xp_to_next_level, up.completed_lessons, up.achievements
+       order by coalesce(up.completed_lessons,0) desc, coalesce(up.xp,0) desc`
+    );
+    res.json({ students: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка загрузки учеников' }); }
+});
+
 // ─── groups ──────────────────────────────────────────────────────────────────
 
 app.get('/groups', authRequired, async (req, res) => {
@@ -755,7 +982,7 @@ app.get('/groups', authRequired, async (req, res) => {
 
 app.post('/groups', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const { name, description = '' } = req.body;
     if (!name) return res.status(400).json({ error: 'Название группы обязательно' });
     const { rows } = await query(
@@ -768,12 +995,12 @@ app.post('/groups', authRequired, async (req, res) => {
 
 app.put('/groups/:id', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const { name, description } = req.body;
-    await query(
-      'update groups set name=coalesce($1,name),description=coalesce($2,description) where id=$3 and teacher_id=$4',
-      [name||null, description||null, req.params.id, req.user.sub]
-    );
+    const own = await query('select teacher_id from groups where id=$1', [req.params.id]);
+    if (!own.rowCount) return res.status(404).json({ error: 'Группа не найдена' });
+    if (!canManageEntity(own.rows[0].teacher_id, req)) return res.status(403).json({ error: 'Недостаточно прав' });
+    await query('update groups set name=coalesce($1,name),description=coalesce($2,description) where id=$3', [name||null, description||null, req.params.id]);
     const { rows } = await query('select id,name,description,teacher_id as "teacherId",created_at as "createdAt" from groups where id=$1', [req.params.id]);
     res.json({ group: rows[0] });
   } catch (err) { res.status(500).json({ error: 'Ошибка' }); }
@@ -781,8 +1008,11 @@ app.put('/groups/:id', authRequired, async (req, res) => {
 
 app.delete('/groups/:id', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
-    await query('delete from groups where id=$1 and teacher_id=$2', [req.params.id, req.user.sub]);
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
+    const own = await query('select teacher_id from groups where id=$1', [req.params.id]);
+    if (!own.rowCount) return res.status(404).json({ error: 'Группа не найдена' });
+    if (!canManageEntity(own.rows[0].teacher_id, req)) return res.status(403).json({ error: 'Недостаточно прав' });
+    await query('delete from groups where id=$1', [req.params.id]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Ошибка' }); }
 });
@@ -806,7 +1036,7 @@ app.get('/groups/:id/members', authRequired, async (req, res) => {
 
 app.post('/groups/:id/members', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const { studentEmail } = req.body;
     if (!studentEmail) return res.status(400).json({ error: 'Email ученика обязателен' });
     const { rows: sr, rowCount } = await query(
@@ -826,7 +1056,7 @@ app.post('/groups/:id/members', authRequired, async (req, res) => {
 
 app.delete('/groups/:id/members/:studentId', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     await query('delete from group_members where group_id=$1 and student_id=$2', [req.params.id, req.params.studentId]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Ошибка' }); }
@@ -835,7 +1065,7 @@ app.delete('/groups/:id/members/:studentId', authRequired, async (req, res) => {
 // Grades overview for teacher (all students in teacher's courses)
 app.get('/teacher/grades', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const { rows } = await query(
       `select s.id, s.user_id as "userId", s.lesson_id as "lessonId", s.course_id as "courseId",
         s.grade, s.status, s.feedback, s.created_at as "createdAt",
@@ -845,9 +1075,9 @@ app.get('/teacher/grades', authRequired, async (req, res) => {
        join app_users u on u.id=s.user_id
        join courses c on c.id=s.course_id
        left join lessons l on l.id=s.lesson_id
-       where c.created_by=$1 and s.grade is not null
+       where ${isSuperAdmin(req) ? '1=1' : 'c.created_by=$1'} and s.grade is not null
        order by s.created_at desc`,
-      [req.user.sub]
+      isSuperAdmin(req) ? [] : [req.user.sub]
     );
     res.json({ grades: rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
@@ -856,7 +1086,7 @@ app.get('/teacher/grades', authRequired, async (req, res) => {
 // Teacher: get all students in their courses/groups with grades
 app.get('/teacher/students', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     // All students who submitted to teacher's courses
     const { rows } = await query(
       `select distinct u.id, u.email, u.user_metadata,
@@ -865,9 +1095,9 @@ app.get('/teacher/students', authRequired, async (req, res) => {
        join courses c on c.id=s.course_id
        join app_users u on u.id=s.user_id
        left join user_progress up on up.user_id=u.id
-       where c.created_by=$1
+       where ${isSuperAdmin(req) ? '1=1' : 'c.created_by=$1'}
        order by u.user_metadata->>'name' asc`,
-      [req.user.sub]
+      isSuperAdmin(req) ? [] : [req.user.sub]
     );
     res.json({ students: rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
@@ -876,7 +1106,7 @@ app.get('/teacher/students', authRequired, async (req, res) => {
 // Teacher: grades for a specific student
 app.get('/teacher/students/:studentId/grades', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const { rows } = await query(
       `select s.id, s.lesson_id as "lessonId", s.course_id as "courseId",
         s.grade, s.status, s.feedback, s.created_at as "createdAt",
@@ -884,9 +1114,9 @@ app.get('/teacher/students/:studentId/grades', authRequired, async (req, res) =>
        from submissions s
        join courses c on c.id=s.course_id
        left join lessons l on l.id=s.lesson_id
-       where s.user_id=$1 and c.created_by=$2
+       where s.user_id=$1 and ${isSuperAdmin(req) ? '1=1' : 'c.created_by=$2'}
        order by s.created_at desc`,
-      [req.params.studentId, req.user.sub]
+      isSuperAdmin(req) ? [req.params.studentId] : [req.params.studentId, req.user.sub]
     );
     // Manual grades too
     const { rows: mg } = await query(
@@ -896,8 +1126,8 @@ app.get('/teacher/students/:studentId/grades', authRequired, async (req, res) =>
        from manual_grades mg
        join courses c on c.id=mg.course_id
        left join lessons l on l.id=mg.lesson_id
-       where mg.student_id=$1 and mg.teacher_id=$2`,
-      [req.params.studentId, req.user.sub]
+       where mg.student_id=$1 and ${isSuperAdmin(req) ? '1=1' : 'mg.teacher_id=$2'}`,
+      isSuperAdmin(req) ? [req.params.studentId] : [req.params.studentId, req.user.sub]
     );
     res.json({ grades: [...rows, ...mg] });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
@@ -906,7 +1136,7 @@ app.get('/teacher/students/:studentId/grades', authRequired, async (req, res) =>
 // Teacher: manually set grade (direct, not from submission)
 app.post('/manual-grades', authRequired, async (req, res) => {
   try {
-    if (!isTeacher(req)) return res.status(403).json({ error: 'Только преподаватель' });
+    if (!isTeacherOrAdmin(req)) return res.status(403).json({ error: 'Только преподаватель или администратор' });
     const { studentId, courseId, lessonId, grade, comment = '' } = req.body;
     if (!studentId || !grade || grade < 0 || grade > 100) return res.status(400).json({ error: 'Некорректные данные' });
     await query(
@@ -998,3 +1228,5 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(PORT, () => console.log(`API server running at http://localhost:${PORT}`));
+ensureSchemaCompat();
+ensureRootAdmin();

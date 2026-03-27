@@ -155,7 +155,7 @@ export function Settings() {
           <p className="font-semibold">{user?.user_metadata?.name}</p>
           <p className="text-sm text-muted-foreground">{user?.email}</p>
           <Badge variant="secondary" className="mt-1 text-xs">
-            {userRole === 'teacher' ? 'Преподаватель' : userRole === 'parent' ? 'Родитель' : 'Ученик'}
+            {userRole === 'superadmin' ? 'Главный администратор' : userRole === 'teacher' ? 'Преподаватель' : userRole === 'parent' ? 'Родитель' : 'Ученик'}
           </Badge>
         </Card>
 

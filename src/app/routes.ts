@@ -30,6 +30,7 @@ export const router = createBrowserRouter([
       { path: "lesson/:id", Component: LessonView },
       { path: "messenger", Component: Messenger },
       { path: "profile", Component: Profile },
+      { path: "profile/:id", Component: Profile },
       { path: "settings", Component: Settings },
       { path: "admin", Component: AdminPanel },
       { path: "parent-dashboard", Component: ParentDashboard },

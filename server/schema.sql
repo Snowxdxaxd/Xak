@@ -83,3 +83,6 @@ create table if not exists user_progress (
   achievements jsonb not null default '[]'::jsonb,
   updated_at timestamptz not null default now()
 );
+
+alter table if exists messages
+  add column if not exists edited_at timestamptz;

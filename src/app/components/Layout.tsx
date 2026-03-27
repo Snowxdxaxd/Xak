@@ -2,7 +2,7 @@ import { ReactNode, useRef, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import {
   LayoutDashboard, BookOpen, MessageCircle, Trophy,
-  User, LogOut, Settings, GraduationCap, BarChart3, Users,
+  User, LogOut, Settings, GraduationCap, BarChart3, Users, Shield,
   ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +21,7 @@ export function Layout({ children }: LayoutProps) {
 
   const isTeacher = userRole === 'teacher';
   const isParent  = userRole === 'parent';
+  const isSuperAdmin = userRole === 'superadmin';
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -36,7 +37,15 @@ export function Layout({ children }: LayoutProps) {
   // Close menu on route change
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
-  const navItems = isTeacher
+  const navItems = isSuperAdmin
+    ? [
+        { icon: LayoutDashboard, label: 'Главная',  to: '/dashboard' },
+        { icon: BookOpen,        label: 'Курсы',    to: '/courses' },
+        { icon: Users,           label: 'Группы',   to: '/groups' },
+        { icon: Trophy,          label: 'Рейтинг',  to: '/leaderboard' },
+        { icon: MessageCircle,   label: 'Чат',      to: '/messenger' },
+      ]
+    : isTeacher
     ? [
         { icon: LayoutDashboard, label: 'Главная',  to: '/dashboard' },
         { icon: BookOpen,        label: 'Курсы',    to: '/courses' },
@@ -57,12 +66,13 @@ export function Layout({ children }: LayoutProps) {
         { icon: MessageCircle,   label: 'Чат',      to: '/messenger' },
       ];
 
-  const roleLabel = isTeacher ? 'Преподаватель' : isParent ? 'Родитель' : 'Ученик';
+  const roleLabel = isSuperAdmin ? 'Главный администратор' : isTeacher ? 'Преподаватель' : isParent ? 'Родитель' : 'Ученик';
 
   const menuItems = [
-    ...(!isTeacher ? [{ icon: User, label: 'Мой профиль', to: '/profile' }] : []),
+    ...(!isTeacher && !isSuperAdmin ? [{ icon: User, label: 'Мой профиль', to: '/profile' }] : []),
     { icon: Settings, label: 'Настройки', to: '/settings' },
-    ...(isTeacher ? [{ icon: GraduationCap, label: 'Проверить задания', to: '/admin' }] : []),
+    ...(isTeacher || isSuperAdmin ? [{ icon: GraduationCap, label: 'Проверить задания', to: '/admin' }] : []),
+    ...(isSuperAdmin ? [{ icon: Shield, label: 'Панель администратора', to: '/admin' }] : []),
     ...(isParent  ? [{ icon: Users, label: 'Мои ученики', to: '/parent-dashboard' }] : []),
   ];
 

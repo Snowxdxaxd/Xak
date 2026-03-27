@@ -40,7 +40,7 @@ export function Dashboard() {
 
   const p = progress || { level: 1, xp: 0, xpToNextLevel: 100, completedLessons: 0, streak: 0 };
   const xpPct = Math.round((p.xp / p.xpToNextLevel) * 100);
-  const isTeacher = userRole === 'teacher';
+  const isTeacher = userRole === 'teacher' || userRole === 'superadmin';
 
   const stats = [
     { icon: BarChart3,    label: 'Уровень',        value: p.level },

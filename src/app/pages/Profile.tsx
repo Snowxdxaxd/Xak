@@ -1,32 +1,47 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { Card } from '../components/ui/card';
 import { Progress } from '../components/ui/progress';
 import { Badge } from '../components/ui/badge';
 import { supabase, api } from '../lib/supabase';
-import { BarChart3, BookOpen, CheckCircle2, Flame, TrendingUp } from 'lucide-react';
+import { BarChart3, BookOpen, CheckCircle2, Flame, TrendingUp, Award } from 'lucide-react';
 
 export function Profile() {
+  const params = useParams();
   const { user, userRole, loading } = useAuth();
   const navigate = useNavigate();
+  const viewedUserId = params.id;
+  const isOwnProfile = !viewedUserId || viewedUserId === user?.id;
   const [progress, setProgress] = useState<any>({ level:1,xp:0,xpToNextLevel:100,completedLessons:0,streak:0,achievements:[] });
   const [grades, setGrades] = useState<any[]>([]);
   const [myCourses, setMyCourses] = useState<any[]>([]);
+  const [publicProfile, setPublicProfile] = useState<any>(null);
   const [pageLoading, setPageLoading] = useState(true);
 
   useEffect(() => { if (!loading && !user) navigate('/login'); }, [user, loading, navigate]);
 
   useEffect(() => {
     if (user) loadAll();
-  }, [user]);
+  }, [user, viewedUserId]);
 
   const loadAll = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) return;
       const t = session.access_token;
+      if (!isOwnProfile && viewedUserId) {
+        const pd = await api.getPublicProfile(viewedUserId, t);
+        if (pd?.profile) {
+          setPublicProfile(pd.profile);
+          setProgress(pd.profile.progress || progress);
+          setMyCourses(pd.profile.courses || []);
+        }
+        setGrades([]);
+        setPageLoading(false);
+        return;
+      }
       const [pd, gd, cd] = await Promise.allSettled([
         api.getUserProgress(t),
         fetch(`/api/grades`, { headers: { Authorization: `Bearer ${t}` } }).then(r => r.json()),
@@ -48,7 +63,10 @@ export function Profile() {
   );
 
   const xpPct = Math.round((progress.xp / progress.xpToNextLevel) * 100);
-  const isTeacher = userRole === 'teacher';
+  const isTeacher = (isOwnProfile ? userRole : publicProfile?.role) === 'teacher' || (isOwnProfile ? userRole : publicProfile?.role) === 'superadmin';
+  const displayName = isOwnProfile ? (user?.user_metadata?.name || user?.email) : (publicProfile?.name || 'Пользователь');
+  const displayEmail = isOwnProfile ? user?.email : publicProfile?.email;
+  const profileRole = isOwnProfile ? userRole : publicProfile?.role;
 
   // Group grades by course
   const byCourse: Record<string, any[]> = {};
@@ -69,13 +87,13 @@ export function Profile() {
         {/* Header */}
         <div className="flex items-start gap-5 mb-8">
           <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center text-xl font-bold flex-shrink-0">
-            {(user?.user_metadata?.name || user?.email || '?')[0].toUpperCase()}
+            {(displayName || '?')[0].toUpperCase()}
           </div>
           <div>
-            <h1 className="text-2xl font-bold">{user?.user_metadata?.name}</h1>
-            <p className="text-muted-foreground text-sm">{user?.email}</p>
+            <h1 className="text-2xl font-bold">{displayName}</h1>
+            <p className="text-muted-foreground text-sm">{displayEmail}</p>
             <Badge variant="secondary" className="mt-1 text-xs">
-              {isTeacher ? 'Преподаватель' : userRole === 'parent' ? 'Родитель' : 'Ученик'}
+              {profileRole === 'superadmin' ? 'Главный администратор' : isTeacher ? 'Преподаватель' : profileRole === 'parent' ? 'Родитель' : 'Ученик'}
             </Badge>
           </div>
         </div>
@@ -105,6 +123,25 @@ export function Profile() {
                 <span className="text-sm text-muted-foreground">{progress.xp} / {progress.xpToNextLevel} XP</span>
               </div>
               <Progress value={xpPct} className="h-2" />
+            </Card>
+
+            {/* Achievements */}
+            <Card className="p-5 mb-6">
+              <h2 className="font-semibold mb-4 flex items-center gap-2">
+                <Award className="w-4 h-4 text-muted-foreground" /> Ачивки
+              </h2>
+              {(progress.achievements || []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">Пока нет достижений</p>
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {(progress.achievements || []).map((a: any) => (
+                    <div key={a.id} className="border rounded-lg p-3">
+                      <p className="text-sm font-medium">{a.title}</p>
+                      <p className="text-xs text-muted-foreground">{a.description}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Card>
 
             {/* My courses with progress */}
@@ -199,7 +236,7 @@ export function Profile() {
 
         {isTeacher && (
           <Card className="p-6 text-center">
-            <p className="text-muted-foreground">Страница профиля доступна ученикам. Используйте панель преподавателя для управления курсами.</p>
+            <p className="text-muted-foreground">Страница прогресса ориентирована на учеников. Используйте панель преподавателя для управления курсами.</p>
           </Card>
         )}
       </div>

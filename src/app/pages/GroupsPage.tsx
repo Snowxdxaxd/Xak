@@ -38,7 +38,7 @@ export function GroupsPage() {
   const [addMemberEmail, setAddMemberEmail] = useState('');
 
   useEffect(() => {
-    if (!loading && (!user || userRole !== 'teacher')) navigate('/dashboard');
+    if (!loading && (!user || (userRole !== 'teacher' && userRole !== 'superadmin'))) navigate('/dashboard');
   }, [user, userRole, loading, navigate]);
 
   useEffect(() => { if (user) { loadGroups(); loadCourses(); } }, [user]);

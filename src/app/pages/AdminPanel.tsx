@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { GraduationCap, BookOpen, Users, FileCheck, CheckCircle2, XCircle } from 'lucide-react';
+import { GraduationCap, BookOpen, Users, FileCheck, CheckCircle2, XCircle, Shield, Trophy } from 'lucide-react';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -18,16 +18,31 @@ export function AdminPanel() {
   const navigate = useNavigate();
   const [pending, setPending] = useState<any[]>([]);
   const [grades, setGrades] = useState<Record<string, { grade: string; feedback: string }>>({});
+  const [students, setStudents] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!loading && (!user || userRole !== 'teacher')) navigate('/dashboard');
+    if (!loading && (!user || (userRole !== 'teacher' && userRole !== 'superadmin'))) navigate('/dashboard');
   }, [user, userRole, loading, navigate]);
 
-  useEffect(() => { if (userRole === 'teacher') loadPending(); }, [userRole]);
+  useEffect(() => {
+    if (userRole === 'teacher' || userRole === 'superadmin') {
+      loadPending();
+      if (userRole === 'superadmin') loadStudents();
+    }
+  }, [userRole]);
 
   const getToken = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token || null;
+  };
+
+  const loadStudents = async () => {
+    try {
+      const t = await getToken(); if (!t) return;
+      const res = await fetch('/api/admin/students', { headers: { Authorization: `Bearer ${t}` } });
+      const d = await res.json();
+      setStudents(d.students || []);
+    } catch { }
   };
 
   const loadPending = async () => {
@@ -55,7 +70,7 @@ export function AdminPanel() {
     } catch { toast.error('Ошибка оценки'); }
   };
 
-  if (loading || userRole !== 'teacher') return (
+  if (loading || (userRole !== 'teacher' && userRole !== 'superadmin')) return (
     <Layout>
       <div className="container mx-auto px-4 py-16 flex justify-center">
         <div className="animate-spin w-6 h-6 border-2 border-foreground border-t-transparent rounded-full" />
@@ -63,12 +78,14 @@ export function AdminPanel() {
     </Layout>
   );
 
+  const isSuperAdmin = userRole === 'superadmin';
+
   return (
     <Layout>
       <div className="container mx-auto px-4 py-8 max-w-5xl">
         <div className="flex items-center gap-3 mb-8">
-          <GraduationCap className="w-5 h-5 text-muted-foreground" />
-          <h1 className="text-2xl font-bold">Панель преподавателя</h1>
+          {isSuperAdmin ? <Shield className="w-5 h-5 text-muted-foreground" /> : <GraduationCap className="w-5 h-5 text-muted-foreground" />}
+          <h1 className="text-2xl font-bold">{isSuperAdmin ? 'Панель главного администратора' : 'Панель преподавателя'}</h1>
         </div>
 
         <Tabs defaultValue="submissions">
@@ -85,6 +102,11 @@ export function AdminPanel() {
             <TabsTrigger value="students" className="gap-1.5">
               <Users className="w-4 h-4" /> Ученики
             </TabsTrigger>
+            {isSuperAdmin && (
+              <TabsTrigger value="tools" className="gap-1.5">
+                <Trophy className="w-4 h-4" /> Инструменты
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* Submissions */}
@@ -186,14 +208,62 @@ export function AdminPanel() {
 
           {/* Students */}
           <TabsContent value="students">
-            <Card className="p-6 text-center">
-              <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/40" />
-              <p className="font-medium mb-1">Статистика учеников</p>
-              <p className="text-sm text-muted-foreground">
-                Детальная аналитика по ученикам появится в следующей версии
-              </p>
-            </Card>
+            {!isSuperAdmin ? (
+              <Card className="p-6 text-center">
+                <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/40" />
+                <p className="font-medium mb-1">Статистика учеников</p>
+                <p className="text-sm text-muted-foreground">
+                  Для полной аналитики используйте раздел «Группы»
+                </p>
+              </Card>
+            ) : (
+              <Card className="p-6">
+                <h2 className="font-semibold mb-4">Прогресс всех учеников</h2>
+                {students.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Ученики пока не найдены.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {students.map((s) => (
+                      <Link to={`/profile/${s.id}`} key={s.id} className="block">
+                        <div className="border rounded-lg p-3 hover:bg-muted/40 transition-colors">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{s.user_metadata?.name || s.email}</p>
+                              <p className="text-xs text-muted-foreground truncate">{s.email}</p>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs">
+                              <Badge variant="secondary">Ур. {s.level}</Badge>
+                              <Badge variant="outline">XP: {s.xp}</Badge>
+                              <Badge variant="outline">Уроков: {s.completedLessons}</Badge>
+                              <Badge variant={Number(s.avgGrade || 0) >= 60 ? 'default' : 'destructive'}>
+                                Ср. балл: {s.avgGrade ?? '—'}
+                              </Badge>
+                            </div>
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
           </TabsContent>
+
+          {isSuperAdmin && (
+            <TabsContent value="tools">
+              <Card className="p-6 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Как главный администратор вы можете редактировать и удалять любые курсы/уроки,
+                  модерировать чат и просматривать прогресс учеников.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Link to="/courses"><Button size="sm" variant="outline">Управление курсами и уроками</Button></Link>
+                  <Link to="/messenger"><Button size="sm" variant="outline">Модерация чата</Button></Link>
+                  <Link to="/leaderboard"><Button size="sm" variant="outline">Рейтинг преподавателей</Button></Link>
+                </div>
+              </Card>
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </Layout>

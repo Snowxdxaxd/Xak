@@ -209,6 +209,21 @@ export const api = {
     });
   },
 
+  async editMessage(messageId: string, text: string, token: string) {
+    return request(`/messages/${messageId}`, {
+      method: 'PUT',
+      token,
+      body: { text },
+    });
+  },
+
+  async deleteMessage(messageId: string, token: string) {
+    return request(`/messages/${messageId}`, {
+      method: 'DELETE',
+      token,
+    });
+  },
+
   // User Progress
   async getUserProgress(token: string) {
     return request('/progress', { token });
@@ -225,5 +240,17 @@ export const api = {
   // Leaderboard
   async getLeaderboard() {
     return request('/leaderboard');
+  },
+
+  async getTeacherPopularity() {
+    return request('/teacher/popularity');
+  },
+
+  async getPublicProfile(userId: string, token: string) {
+    return request(`/users/${userId}/public-profile`, { token });
+  },
+
+  async getAdminStudents(token: string) {
+    return request('/admin/students', { token });
   },
 };

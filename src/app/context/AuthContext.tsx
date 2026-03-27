@@ -3,7 +3,7 @@ import { supabase, type AppUser } from '../lib/supabase';
 
 interface AuthContextType {
   user: AppUser | null;
-  userRole: 'student' | 'teacher' | 'parent' | null;
+  userRole: 'student' | 'teacher' | 'parent' | 'superadmin' | null;
   loading: boolean;
   signOut: () => Promise<void>;
 }
@@ -19,7 +19,7 @@ export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
-  const [userRole, setUserRole] = useState<'student' | 'teacher' | 'parent' | null>(null);
+  const [userRole, setUserRole] = useState<'student' | 'teacher' | 'parent' | 'superadmin' | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

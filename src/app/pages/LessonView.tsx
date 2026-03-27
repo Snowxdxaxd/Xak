@@ -159,7 +159,7 @@ export function LessonView() {
     </Layout>
   );
 
-  const isTeacher = userRole === 'teacher';
+  const isTeacher = userRole === 'teacher' || userRole === 'superadmin';
   const backUrl = lesson.courseId ? `/course/${lesson.courseId}` : '/courses';
 
   return (

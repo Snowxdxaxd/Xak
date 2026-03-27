@@ -2,29 +2,36 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { Send, Users, Plus } from 'lucide-react';
+import { Send, Users, Plus, Pencil, Trash2, Copy, Reply, Check, X, MessageSquarePlus } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { api, supabase } from '../lib/supabase';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
+import { Textarea } from '../components/ui/textarea';
 
 export function Messenger() {
-  const { user, loading } = useAuth();
+  const { user, userRole, loading } = useAuth();
   const navigate = useNavigate();
-  const [groups] = useState([
-    { id: 'general', name: 'Общий чат', members: 0 },
-    { id: 'python-basics', name: 'Python для начинающих', members: 0 },
-    { id: 'javascript-help', name: 'Помощь по JavaScript', members: 0 },
-  ]);
+  const [groups, setGroups] = useState<any[]>([]);
   const [selectedGroup, setSelectedGroup] = useState('general');
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+  const [replyTo, setReplyTo] = useState<any | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [groupForm, setGroupForm] = useState({ name: '', description: '' });
 
   useEffect(() => {
     if (!loading && !user) navigate('/login');
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    if (user) loadGroups();
+  }, [user]);
 
   useEffect(() => {
     if (selectedGroup && user) {
@@ -34,12 +41,32 @@ export function Messenger() {
     }
   }, [selectedGroup, user]);
 
+  const getToken = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || null;
+  };
+
+  const loadGroups = async () => {
+    try {
+      const t = await getToken();
+      if (!t) return;
+      const res = await fetch('/api/groups', { headers: { Authorization: `Bearer ${t}` } });
+      const d = await res.json();
+      const base = [{ id: 'general', name: 'Общий чат', memberCount: 0 }];
+      const dynamic = (d.groups || []).map((g: any) => ({ id: g.id, name: g.name, memberCount: Number(g.memberCount || 0) }));
+      const all = [...base, ...dynamic.filter((g: any) => g.id !== 'general')];
+      setGroups(all);
+      if (!all.find((g: any) => g.id === selectedGroup)) setSelectedGroup('general');
+    } catch {
+      setGroups([{ id: 'general', name: 'Общий чат', memberCount: 0 }]);
+    }
+  };
+
   const loadMessages = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
-
-      const data = await api.getMessages(selectedGroup, session.access_token);
+      const t = await getToken();
+      if (!t) return;
+      const data = await api.getMessages(selectedGroup, t);
       setMessages(data.messages || []);
     } catch (error) {
       console.error('Error loading messages:', error);
@@ -51,16 +78,70 @@ export function Messenger() {
     if (!newMessage.trim()) return;
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
-
-      await api.sendMessage(selectedGroup, newMessage, session.access_token);
+      const t = await getToken();
+      if (!t) return;
+      const payload = replyTo ? `↪ ${replyTo.userName}: ${replyTo.text}\n${newMessage}` : newMessage;
+      await api.sendMessage(selectedGroup, payload, t);
       setNewMessage('');
+      setReplyTo(null);
       loadMessages();
     } catch (error) {
       toast.error('Ошибка отправки сообщения');
     }
   };
+
+  const handleEditMessage = async (messageId: string) => {
+    if (!editingText.trim()) return;
+    try {
+      const t = await getToken();
+      if (!t) return;
+      await api.editMessage(messageId, editingText, t);
+      setEditingId(null);
+      setEditingText('');
+      loadMessages();
+      toast.success('Сообщение изменено');
+    } catch {
+      toast.error('Нельзя изменить это сообщение');
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!confirm('Удалить сообщение?')) return;
+    try {
+      const t = await getToken();
+      if (!t) return;
+      await api.deleteMessage(messageId, t);
+      loadMessages();
+      toast.success('Сообщение удалено');
+    } catch {
+      toast.error('Нельзя удалить это сообщение');
+    }
+  };
+
+  const handleCreateGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const t = await getToken();
+      if (!t) return;
+      const r = await fetch('/api/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+        body: JSON.stringify(groupForm),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Ошибка');
+      toast.success('Чат создан');
+      setGroupForm({ name: '', description: '' });
+      setIsCreateOpen(false);
+      await loadGroups();
+      setSelectedGroup(d.group.id);
+    } catch (err: any) {
+      toast.error(err.message || 'Только преподаватель/админ может создавать чаты');
+    }
+  };
+
+  const canCreateChat = userRole === 'teacher' || userRole === 'superadmin';
+  const canModerateAll = userRole === 'superadmin';
 
   if (loading) {
     return (
@@ -75,16 +156,41 @@ export function Messenger() {
   return (
     <Layout>
       <div className="container mx-auto px-4 py-8">
-        <h1 className="text-4xl md:text-5xl font-bold mb-8">💬 Чат с учениками</h1>
+        <h1 className="text-3xl md:text-4xl font-bold mb-6">💬 Мессенджер</h1>
 
         <div className="grid md:grid-cols-[300px_1fr] gap-6 h-[calc(100vh-250px)]">
-          {/* Groups Sidebar */}
           <Card className="p-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold">Группы</h2>
-              <Button size="icon" variant="ghost">
-                <Plus className="w-5 h-5" />
-              </Button>
+              <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+                <DialogTrigger asChild>
+                  <Button size="icon" variant="ghost" disabled={!canCreateChat} title={canCreateChat ? 'Создать чат' : 'Только преподаватель/админ'}>
+                    <Plus className="w-5 h-5" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle className="flex items-center gap-2"><MessageSquarePlus className="w-4 h-4" /> Создать чат</DialogTitle></DialogHeader>
+                  <form onSubmit={handleCreateGroup} className="space-y-4">
+                    <div>
+                      <Input
+                        value={groupForm.name}
+                        onChange={(e) => setGroupForm(v => ({ ...v, name: e.target.value }))}
+                        placeholder="Название чата"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Textarea
+                        value={groupForm.description}
+                        onChange={(e) => setGroupForm(v => ({ ...v, description: e.target.value }))}
+                        placeholder="Описание (необязательно)"
+                        rows={3}
+                      />
+                    </div>
+                    <Button type="submit" className="w-full">Создать</Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </div>
             <div className="space-y-2">
               {groups.map((group) => (
@@ -101,6 +207,7 @@ export function Messenger() {
                     <Users className="w-5 h-5" />
                     <div className="flex-1">
                       <div className="font-medium">{group.name}</div>
+                      {!!group.memberCount && <div className="text-xs opacity-80">{group.memberCount} участников</div>}
                     </div>
                   </div>
                 </button>
@@ -108,7 +215,6 @@ export function Messenger() {
             </div>
           </Card>
 
-          {/* Chat Area */}
           <Card className="flex flex-col">
             <div className="p-4 border-b">
               <h2 className="text-xl font-bold">
@@ -121,10 +227,10 @@ export function Messenger() {
                 {messages.map((message) => (
                   <div
                     key={message.id}
-                    className={`flex ${message.userId === user?.id ? 'justify-end' : 'justify-start'}`}
+                    className={`flex ${message.userId === user?.id ? 'justify-end' : 'justify-start'} group`}
                   >
                     <div
-                      className={`max-w-[70%] rounded-2xl p-4 ${
+                      className={`max-w-[76%] rounded-2xl p-4 ${
                         message.userId === user?.id
                           ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
                           : 'bg-slate-100'
@@ -135,13 +241,70 @@ export function Messenger() {
                           {message.userName}
                         </div>
                       )}
-                      <p>{message.text}</p>
-                      <div className="text-xs mt-1 opacity-70">
-                        {new Date(message.createdAt).toLocaleTimeString('ru-RU', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </div>
+                      {editingId === message.id ? (
+                        <div className="space-y-2">
+                          <Textarea value={editingText} onChange={(e) => setEditingText(e.target.value)} rows={3} />
+                          <div className="flex gap-2 justify-end">
+                            <Button type="button" variant="outline" size="sm" onClick={() => { setEditingId(null); setEditingText(''); }}>
+                              <X className="w-3.5 h-3.5 mr-1" /> Отмена
+                            </Button>
+                            <Button type="button" size="sm" onClick={() => handleEditMessage(message.id)}>
+                              <Check className="w-3.5 h-3.5 mr-1" /> Сохранить
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="whitespace-pre-wrap break-words">{message.text}</p>
+                          <div className="text-xs mt-1 opacity-70 flex items-center gap-2">
+                            <span>
+                              {new Date(message.createdAt).toLocaleTimeString('ru-RU', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                            {message.editedAt && <span>(изменено)</span>}
+                          </div>
+                        </>
+                      )}
+                      {editingId !== message.id && (
+                        <div className={`flex gap-1 mt-2 ${message.userId === user?.id ? 'justify-end' : 'justify-start'}`}>
+                          <Button size="icon" variant="ghost" className="w-7 h-7" onClick={() => setReplyTo(message)} title="Ответить">
+                            <Reply className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="w-7 h-7"
+                            onClick={() => navigator.clipboard.writeText(message.text)}
+                            title="Копировать"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </Button>
+                          {(message.userId === user?.id || canModerateAll) && (
+                            <>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="w-7 h-7"
+                                onClick={() => { setEditingId(message.id); setEditingText(message.text); }}
+                                title="Изменить"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="w-7 h-7 text-destructive hover:text-destructive"
+                                onClick={() => handleDeleteMessage(message.id)}
+                                title="Удалить"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -154,6 +317,17 @@ export function Messenger() {
             </ScrollArea>
 
             <form onSubmit={handleSendMessage} className="p-4 border-t">
+              {replyTo && (
+                <div className="mb-2 rounded-md border p-2 text-xs bg-muted/50 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">Ответ: {replyTo.userName}</p>
+                    <p className="text-muted-foreground truncate">{replyTo.text}</p>
+                  </div>
+                  <Button type="button" size="icon" variant="ghost" className="w-7 h-7" onClick={() => setReplyTo(null)}>
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              )}
               <div className="flex gap-2">
                 <Input
                   value={newMessage}

@@ -92,7 +92,7 @@ export function Courses() {
     </div>
   );
 
-  const isTeacher = userRole === 'teacher';
+  const isTeacher = userRole === 'teacher' || userRole === 'superadmin';
 
   return (
     <Layout>
