@@ -112,3 +112,9 @@ git commit -m "Initial setup: local PostgreSQL + API"
   - `README.md`
   - весь исходный код `src` и `server`
   
+
+
+
+  супер админ лог и пароль:
+admin@codekids.local
+  Admin12345!
