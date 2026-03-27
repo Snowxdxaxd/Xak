@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
@@ -14,6 +16,14 @@ const ROOT_ADMIN_PASSWORD = process.env.ROOT_ADMIN_PASSWORD || 'Admin12345!';
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+// В dev Vite proxy убирает /api перед отправкой на Express.
+// В production статика раздаётся самим Express, поэтому /api/* приходит как есть.
+app.use((req, _res, next) => {
+  if (req.path.startsWith('/api/')) {
+    req.url = req.url.slice(4); // убираем /api
+  }
+  next();
+});
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -1341,6 +1351,16 @@ app.get('/parent/students/:studentId/grades', authRequired, async (req, res) => 
     res.json({ grades: [...sub, ...mg] });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
 });
+
+// ─── serve frontend in production ────────────────────────────────────────────
+if (process.env.NODE_ENV === 'production') {
+  const __dirname_server = path.dirname(fileURLToPath(import.meta.url));
+  const distPath = path.join(__dirname_server, '..', 'dist');
+  app.use(express.static(distPath));
+  app.get('/{*splat}', (_req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
 
 // ─── global error handler ─────────────────────────────────────────────────────
 
