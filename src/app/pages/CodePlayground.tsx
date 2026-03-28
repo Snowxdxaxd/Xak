@@ -4,6 +4,7 @@ import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { supabase } from '../lib/supabase';
+import { useLanguage } from '../context/LanguageContext';
 import { toast } from 'sonner';
 import {
   Play, RotateCcw, Copy, CheckCheck, Terminal,
@@ -97,6 +98,7 @@ function makePyodideHTML(code: string): string {
 }
 
 export function CodePlayground() {
+  const { t } = useLanguage();
   const [lang, setLang] = useState<LangId>('javascript');
   const [code, setCode] = useState(EXAMPLES.javascript[0].code);
   const [output, setOutput] = useState('');
@@ -228,7 +230,7 @@ export function CodePlayground() {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <Terminal className="w-5 h-5 text-muted-foreground" />
-            <h1 className="text-2xl font-bold">Компилятор кода</h1>
+            <h1 className="text-2xl font-bold">{t('playground_title')}</h1>
             <Badge variant="secondary" className="text-xs">Онлайн</Badge>
           </div>
           <p className="text-sm text-muted-foreground hidden sm:block">
@@ -343,7 +345,7 @@ export function CodePlayground() {
                 className="gap-1.5 min-w-[90px]"
               >
                 {running
-                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Выполнение...</>
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {t('playground_running')}</>
                   : <><Play className="w-3.5 h-3.5" /> Запустить</>
                 }
               </Button>
@@ -355,7 +357,7 @@ export function CodePlayground() {
             <div className="flex items-center justify-between px-4 py-2 bg-muted/50 border-b">
               <div className="flex items-center gap-2">
                 <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">Вывод</span>
+                <span className="text-xs text-muted-foreground">{t('playground_output')}</span>
                 {error && <Badge variant="destructive" className="text-xs">Ошибка</Badge>}
                 {!error && output && <Badge variant="secondary" className="text-xs text-green-600 dark:text-green-400">OK</Badge>}
               </div>
@@ -373,7 +375,7 @@ export function CodePlayground() {
                   <span>
                     {lang === 'python' && !pyReady
                       ? 'Загрузка Python (WebAssembly)... ~10 сек...'
-                      : 'Выполнение...'}
+                      : t('playground_running')}
                   </span>
                 </div>
               )}

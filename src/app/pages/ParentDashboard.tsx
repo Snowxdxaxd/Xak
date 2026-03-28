@@ -7,6 +7,7 @@ import { Badge } from '../components/ui/badge';
 import { Progress } from '../components/ui/progress';
 import { Button } from '../components/ui/button';
 import { supabase } from '../lib/supabase';
+import { useLanguage } from '../context/LanguageContext';
 import {
   Users, BarChart3, CheckCircle2, TrendingUp, Settings,
   ChevronDown, ChevronRight, BookOpen, XCircle,
@@ -21,6 +22,7 @@ function gradeColor(g: number) {
 
 export function ParentDashboard() {
   const { user, userRole, loading } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [students, setStudents] = useState<any[]>([]);
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
@@ -91,7 +93,7 @@ export function ParentDashboard() {
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
             <Users className="w-5 h-5 text-muted-foreground" />
-            <h1 className="text-2xl font-bold">Мои ученики</h1>
+            <h1 className="text-2xl font-bold">{t('parent_title')}</h1>
           </div>
           <Link to="/settings">
             <Button variant="outline" size="sm" className="gap-1.5">
@@ -111,7 +113,7 @@ export function ParentDashboard() {
         {accepted.length === 0 ? (
           <Card className="p-12 text-center">
             <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/40" />
-            <p className="font-medium mb-1">Нет привязанных учеников</p>
+            <p className="font-medium mb-1">{t('parent_no_students')}</p>
             <p className="text-sm text-muted-foreground mb-4">Отправьте запрос в настройках аккаунта</p>
             <Link to="/settings"><Button size="sm">Перейти в настройки</Button></Link>
           </Card>

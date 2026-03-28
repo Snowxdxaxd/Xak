@@ -6,6 +6,7 @@ import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { supabase } from '../lib/supabase';
+import { useLanguage } from '../context/LanguageContext';
 import { toast } from 'sonner';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -36,6 +37,7 @@ function StatCard({ icon: Icon, label, value, sub, color = '' }: any) {
 
 export function TeacherDashboard() {
   const { user, userRole, loading } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [stats, setStats] = useState<any>(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -115,7 +117,7 @@ export function TeacherDashboard() {
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <BarChart3 className="w-6 h-6 text-muted-foreground" />
-              Дашборд преподавателя
+              {t('menu_teacher_dashboard')}
             </h1>
             <p className="text-sm text-muted-foreground mt-1">Статистика ваших курсов и учеников</p>
           </div>

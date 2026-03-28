@@ -22,6 +22,9 @@ guidelines/
 supabase/
 utils/
 
+# Uploads (mounted as volume, not baked into image)
+uploads/
+
 # OS files
 .DS_Store
 Thumbs.db

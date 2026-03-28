@@ -9,6 +9,7 @@ import { Button } from '../components/ui/button';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Badge } from '../components/ui/badge';
 import { motion } from 'motion/react';
+import { useLanguage } from '../context/LanguageContext';
 
 const LANGUAGES = [
   { name: 'Python',     color: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20' },
@@ -78,6 +79,7 @@ const STATS = [
 ];
 
 export function Home() {
+  const { t, lang, setLang } = useLanguage();
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
       {/* ── Header ── */}
@@ -88,13 +90,19 @@ export function Home() {
             CodeKids
           </Link>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}
+              className="px-2 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              {lang === 'ru' ? 'EN' : 'RU'}
+            </button>
             <ThemeToggle />
             <Link to="/login">
-              <Button variant="ghost" size="sm">Войти</Button>
+              <Button variant="ghost" size="sm">{t('home_login_btn')}</Button>
             </Link>
             <Link to="/register">
               <Button size="sm" className="gap-1.5">
-                Начать <ArrowRight className="w-3.5 h-3.5" />
+                {t('home_start_btn')} <ArrowRight className="w-3.5 h-3.5" />
               </Button>
             </Link>
           </div>

@@ -200,6 +200,33 @@ create table if not exists class_meetings (
   is_active boolean not null default true
 );
 
+-- ─── Banned emails (registration block after account deletion) ───────────────
+create table if not exists banned_emails (
+  email text primary key,
+  banned_by uuid references app_users(id) on delete set null,
+  banned_at timestamptz not null default now(),
+  reason text
+);
+
+-- ─── Media files (chat attachments) ─────────────────────────────────────────
+create table if not exists media_files (
+  id uuid primary key default gen_random_uuid(),
+  message_id text references messages(id) on delete cascade,
+  user_id uuid references app_users(id) on delete set null,
+  group_id text not null,
+  original_name text not null,
+  stored_name text not null,
+  mime_type text not null,
+  media_type text not null,
+  file_size bigint not null,
+  thumbnail_name text,
+  width int,
+  height int,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_media_message on media_files(message_id);
+create index if not exists idx_media_user    on media_files(user_id);
+
 -- ─── Group ↔ Course assignments ───────────────────────────────────────────────
 -- Linking a class (group) to a private course grants all class members access
 create table if not exists group_courses (

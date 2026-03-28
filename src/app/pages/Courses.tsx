@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { BookOpen, Plus, Pencil, Trash2, BarChart2, Lock, Globe } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -16,14 +17,9 @@ import { api, supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
 
-const LEVELS: Record<string, string> = {
-  beginner: 'Начальный',
-  intermediate: 'Средний',
-  advanced: 'Продвинутый',
-};
-
 export function Courses() {
   const { user, userRole, loading } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [courses, setCourses] = useState<any[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -104,6 +100,12 @@ export function Courses() {
     </div>
   );
 
+  const LEVELS: Record<string, string> = {
+    beginner:     t('courses_level_beginner'),
+    intermediate: t('courses_level_intermediate'),
+    advanced:     t('courses_level_advanced'),
+  };
+
   const isTeacher = userRole === 'teacher' || userRole === 'superadmin';
   const publicCourses  = courses.filter(c => !c.isPrivate);
   const privateCourses = courses.filter(c => c.isPrivate);
@@ -113,7 +115,7 @@ export function Courses() {
       <div className="container mx-auto px-4 py-8 max-w-5xl">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold mb-1">Курсы</h1>
+            <h1 className="text-3xl font-bold mb-1">{t('courses_title')}</h1>
             <p className="text-muted-foreground text-sm">
               {isTeacher ? 'Управление учебными курсами' : 'Выбери курс и начни обучение'}
             </p>
@@ -122,12 +124,12 @@ export function Courses() {
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <DialogTrigger asChild>
                 <Button size="sm" className="gap-1.5">
-                  <Plus className="w-4 h-4" /> Создать курс
+                  <Plus className="w-4 h-4" /> {t('courses_create')}
                 </Button>
               </DialogTrigger>
               <DialogContent>
-                <DialogHeader><DialogTitle>Новый курс</DialogTitle></DialogHeader>
-                <CourseForm form={form} setForm={setForm} onSubmit={handleCreate} submitLabel="Создать" />
+                <DialogHeader><DialogTitle>{t('courses_create')}</DialogTitle></DialogHeader>
+                <CourseForm form={form} setForm={setForm} onSubmit={handleCreate} submitLabel={t('save')} levels={LEVELS} t={t} />
               </DialogContent>
             </Dialog>
           )}
@@ -136,39 +138,36 @@ export function Courses() {
         {courses.length === 0 ? (
           <Card className="p-12 text-center">
             <BookOpen className="w-10 h-10 mx-auto mb-3 text-muted-foreground/40" />
-            <p className="font-medium mb-1">Курсов пока нет</p>
+            <p className="font-medium mb-1">{t('courses_no_courses')}</p>
             <p className="text-sm text-muted-foreground">
-              {isTeacher ? 'Создайте первый курс' : 'Скоро появятся новые курсы'}
+              {isTeacher ? t('courses_no_courses_desc') : t('courses_no_courses_student')}
             </p>
           </Card>
         ) : (
           <div className="space-y-8">
-            {/* Public courses */}
             {publicCourses.length > 0 && (
               <section>
                 <div className="flex items-center gap-2 mb-4">
                   <Globe className="w-4 h-4 text-muted-foreground" />
                   <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                    Общие курсы
+                    {t('courses_public')}
                   </h2>
                   <Badge variant="secondary" className="text-xs">{publicCourses.length}</Badge>
                 </div>
                 <CourseGrid
-                  courses={publicCourses}
-                  isTeacher={isTeacher}
+                  courses={publicCourses} isTeacher={isTeacher} levels={LEVELS} t={t}
                   onEdit={c => { setEditCourse(c); setForm({ title: c.title, description: c.description, level: c.level, isPrivate: c.isPrivate }); }}
                   onDelete={handleDelete}
                 />
               </section>
             )}
 
-            {/* Individual/private courses */}
             {privateCourses.length > 0 && (
               <section>
                 <div className="flex items-center gap-2 mb-4">
                   <Lock className="w-4 h-4 text-muted-foreground" />
                   <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                    Индивидуальные курсы
+                    {t('courses_individual')}
                   </h2>
                   <Badge variant="outline" className="text-xs">{privateCourses.length}</Badge>
                   {isTeacher && (
@@ -176,8 +175,7 @@ export function Courses() {
                   )}
                 </div>
                 <CourseGrid
-                  courses={privateCourses}
-                  isTeacher={isTeacher}
+                  courses={privateCourses} isTeacher={isTeacher} levels={LEVELS} t={t}
                   onEdit={c => { setEditCourse(c); setForm({ title: c.title, description: c.description, level: c.level, isPrivate: c.isPrivate }); }}
                   onDelete={handleDelete}
                 />
@@ -186,11 +184,10 @@ export function Courses() {
           </div>
         )}
 
-        {/* Edit dialog */}
         <Dialog open={!!editCourse} onOpenChange={(o) => !o && setEditCourse(null)}>
           <DialogContent>
-            <DialogHeader><DialogTitle>Редактировать курс</DialogTitle></DialogHeader>
-            <CourseForm form={form} setForm={setForm} onSubmit={handleEdit} submitLabel="Сохранить" />
+            <DialogHeader><DialogTitle>{t('courses_edit')}</DialogTitle></DialogHeader>
+            <CourseForm form={form} setForm={setForm} onSubmit={handleEdit} submitLabel={t('save')} levels={LEVELS} t={t} />
           </DialogContent>
         </Dialog>
       </div>
@@ -198,7 +195,7 @@ export function Courses() {
   );
 }
 
-function CourseGrid({ courses, isTeacher, onEdit, onDelete }: any) {
+function CourseGrid({ courses, isTeacher, onEdit, onDelete, levels, t }: any) {
   return (
     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
       {courses.map((c: any, i: number) => (
@@ -220,28 +217,22 @@ function CourseGrid({ courses, isTeacher, onEdit, onDelete }: any) {
             </div>
             <div className="flex items-center justify-between pt-3 border-t">
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="secondary" className="text-xs">{LEVELS[c.level] || c.level}</Badge>
+                <Badge variant="secondary" className="text-xs">{levels[c.level] || c.level}</Badge>
                 {c.isPrivate && (
                   <Badge variant="outline" className="text-xs text-primary border-primary/30">
-                    Индивидуальный
+                    {t('courses_individual')}
                   </Badge>
                 )}
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <BarChart2 className="w-3 h-3" /> {c.lessonsCount || 0} ур.
+                  <BarChart2 className="w-3 h-3" /> {c.lessonsCount || 0} {t('courses_lessons')}
                 </span>
               </div>
               {isTeacher && (
                 <div className="flex gap-1 flex-shrink-0">
-                  <Button
-                    variant="ghost" size="icon" className="w-7 h-7"
-                    onClick={() => onEdit(c)}
-                  >
+                  <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => onEdit(c)} title={t('courses_edit')}>
                     <Pencil className="w-3.5 h-3.5" />
                   </Button>
-                  <Button
-                    variant="ghost" size="icon" className="w-7 h-7 text-destructive hover:text-destructive"
-                    onClick={() => onDelete(c.id)}
-                  >
+                  <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive hover:text-destructive" onClick={() => onDelete(c.id)} title={t('courses_delete')}>
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </div>
@@ -254,7 +245,7 @@ function CourseGrid({ courses, isTeacher, onEdit, onDelete }: any) {
   );
 }
 
-function CourseForm({ form, setForm, onSubmit, submitLabel }: any) {
+function CourseForm({ form, setForm, onSubmit, submitLabel, levels, t }: any) {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <div>
@@ -270,23 +261,17 @@ function CourseForm({ form, setForm, onSubmit, submitLabel }: any) {
         <Select value={form.level} onValueChange={v => setForm({ ...form, level: v })}>
           <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="beginner">Начальный</SelectItem>
-            <SelectItem value="intermediate">Средний</SelectItem>
-            <SelectItem value="advanced">Продвинутый</SelectItem>
+            {Object.entries(levels).map(([k, v]: any) => (
+              <SelectItem key={k} value={k}>{v}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
-      {/* Individual course toggle */}
       <div className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${form.isPrivate ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
-        <Switch
-          id="cf-private"
-          checked={form.isPrivate}
-          onCheckedChange={v => setForm({ ...form, isPrivate: v })}
-          className="mt-0.5"
-        />
+        <Switch id="cf-private" checked={form.isPrivate} onCheckedChange={v => setForm({ ...form, isPrivate: v })} className="mt-0.5" />
         <div>
           <Label htmlFor="cf-private" className="font-medium cursor-pointer flex items-center gap-1.5">
-            <Lock className="w-3.5 h-3.5" /> Индивидуальный курс
+            <Lock className="w-3.5 h-3.5" /> {t('courses_individual')}
           </Label>
           <p className="text-xs text-muted-foreground mt-0.5">
             Курс будет скрыт от других учеников. Доступ — только через класс или ручную запись.

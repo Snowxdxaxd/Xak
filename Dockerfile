@@ -34,6 +34,9 @@ COPY --from=builder /app/dist ./dist
 # Copy server source
 COPY server/ ./server/
 
+# Ensure uploads directory exists
+RUN mkdir -p /app/uploads/thumbnails
+
 EXPOSE 4000
 
 ENV NODE_ENV=production
