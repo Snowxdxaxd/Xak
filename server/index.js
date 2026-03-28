@@ -95,11 +95,13 @@ async function awardXP(userId, xp, reason) {
   const p = rowCount ? rows[0] : { level:1, xp:0, xp_to_next_level:100, completed_lessons:0, streak:0, achievements:[] };
   p.xp = (Number(p.xp) || 0) + xp;
   let leveled = false;
+  let coinsEarned = 0;
   while (p.xp >= p.xp_to_next_level) {
     p.xp -= p.xp_to_next_level;
     p.level += 1;
     p.xp_to_next_level = Math.floor(p.xp_to_next_level * 1.5);
     leveled = true;
+    coinsEarned += p.level * 50;
   }
   await query(
     `insert into user_progress(user_id,level,xp,xp_to_next_level,completed_lessons,streak,achievements,updated_at)
@@ -109,6 +111,9 @@ async function awardXP(userId, xp, reason) {
      streak=user_progress.streak,achievements=user_progress.achievements,updated_at=now()`,
     [userId, p.level, p.xp, p.xp_to_next_level, p.completed_lessons, p.streak, JSON.stringify(p.achievements||[])]
   );
+  if (coinsEarned > 0) {
+    await query('update user_progress set coins=coins+$1 where user_id=$2', [coinsEarned, userId]);
+  }
   if (leveled) {
     await addNotification(userId, 'achievement', 'Новый уровень!', `Поздравляем! Вы достигли уровня ${p.level}.`, { level: p.level });
   }
@@ -1275,10 +1280,11 @@ app.get('/progress', authRequired, async (req, res) => {
   try {
     const { rows, rowCount } = await query(
       `select level,xp,xp_to_next_level as "xpToNextLevel",
-        completed_lessons as "completedLessons",streak,achievements
+        completed_lessons as "completedLessons",streak,achievements,
+        coalesce(coins,0) as coins
        from user_progress where user_id=$1`, [req.user.sub]
     );
-    if (!rowCount) return res.json({ level:1,xp:0,xpToNextLevel:100,completedLessons:0,streak:0,achievements:[] });
+    if (!rowCount) return res.json({ level:1,xp:0,xpToNextLevel:100,completedLessons:0,streak:0,achievements:[],coins:0 });
     res.json(rows[0]);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка прогресса' }); }
 });
@@ -1297,6 +1303,66 @@ app.get('/leaderboard', async (_req, res) => {
     );
     res.json({ leaderboard: rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка лидерборда' }); }
+});
+
+// ─── shop ─────────────────────────────────────────────────────────────────────
+
+const SHOP_ITEM_PRICES = {
+  crown: 200, cat_ears: 120, witch_hat: 280, halo: 350,
+  star_glasses: 180, headphones: 250, fox_mask: 300,
+  fire_aura: 320, sparkle_aura: 220, rainbow_aura: 280,
+  night_sky: 160, cherry_blossom: 200,
+};
+
+app.get('/shop/inventory', authRequired, async (req, res) => {
+  try {
+    const uid = req.user.sub;
+    const { rows: [prog] } = await query('select coalesce(coins,0) as coins from user_progress where user_id=$1', [uid]);
+    const { rows: invRows } = await query('select item_id from user_inventory where user_id=$1', [uid]);
+    const { rows: eqRows }  = await query('select slot, item_id from user_equipped where user_id=$1', [uid]);
+    const equipped = Object.fromEntries(eqRows.map(r => [r.slot, r.item_id]));
+    res.json({ coins: prog?.coins ?? 0, ownedIds: invRows.map(r => r.item_id), equipped });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка инвентаря' }); }
+});
+
+app.post('/shop/buy', authRequired, async (req, res) => {
+  try {
+    const uid = req.user.sub;
+    const { itemId } = req.body;
+    const price = SHOP_ITEM_PRICES[itemId];
+    if (!price) return res.status(400).json({ error: 'Предмет не найден' });
+    const { rows: [prog] } = await query('select coalesce(coins,0) as coins from user_progress where user_id=$1', [uid]);
+    if ((prog?.coins ?? 0) < price) return res.status(400).json({ error: 'Недостаточно монет' });
+    const { rows: [exists] } = await query('select 1 from user_inventory where user_id=$1 and item_id=$2', [uid, itemId]);
+    if (exists) return res.status(400).json({ error: 'Уже куплено' });
+    await query('update user_progress set coins=coins-$1 where user_id=$2', [price, uid]);
+    await query('insert into user_inventory (user_id, item_id) values ($1,$2)', [uid, itemId]);
+    const { rows: [updated] } = await query('select coalesce(coins,0) as coins from user_progress where user_id=$1', [uid]);
+    res.json({ ok: true, coins: updated.coins });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка покупки' }); }
+});
+
+app.post('/shop/equip', authRequired, async (req, res) => {
+  try {
+    const uid = req.user.sub;
+    const { itemId, slot } = req.body;
+    const { rows: [owns] } = await query('select 1 from user_inventory where user_id=$1 and item_id=$2', [uid, itemId]);
+    if (!owns) return res.status(403).json({ error: 'Предмет не куплен' });
+    await query(
+      'insert into user_equipped (user_id,slot,item_id) values ($1,$2,$3) on conflict (user_id,slot) do update set item_id=$3',
+      [uid, slot, itemId]
+    );
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка экипировки' }); }
+});
+
+app.post('/shop/unequip', authRequired, async (req, res) => {
+  try {
+    const uid = req.user.sub;
+    const { slot } = req.body;
+    await query('delete from user_equipped where user_id=$1 and slot=$2', [uid, slot]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка снятия предмета' }); }
 });
 
 app.get('/teacher/popularity', async (_req, res) => {

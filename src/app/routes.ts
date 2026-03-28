@@ -18,6 +18,7 @@ import { GroupsPage } from './pages/GroupsPage';
 import { CodePlayground } from './pages/CodePlayground';
 import { TeacherDashboard } from './pages/TeacherDashboard';
 import { MeetingPage } from './pages/MeetingPage';
+import { AvatarShop } from './pages/AvatarShop';
 
 export const router = createBrowserRouter([
   {
@@ -43,6 +44,7 @@ export const router = createBrowserRouter([
       { path: "playground", Component: CodePlayground },
       { path: "teacher-dashboard", Component: TeacherDashboard },
       { path: "meeting/:groupId", Component: MeetingPage },
+      { path: "shop", Component: AvatarShop },
     ],
   },
 ]);

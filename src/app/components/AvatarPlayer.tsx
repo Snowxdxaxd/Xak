@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo, type RefObject } from 'react';
 import { Play, Pause, Square, Volume2 } from 'lucide-react';
 import { Button } from './ui/button';
+import { ITEM_MAP, type EquippedSlots } from '../lib/shopItems';
 
 // ─── Text pre-processing ──────────────────────────────────────────────────────
 function markdownToSpeech(md: string): string {
@@ -25,7 +26,7 @@ function markdownToSpeech(md: string): string {
 // ─── Types & Constants ────────────────────────────────────────────────────────
 type SpeakState = 'idle' | 'speaking' | 'paused' | 'done';
 type MouthShape = 'closed' | 'a' | 'e' | 'o' | 'u';
-type CharId = 'kira' | 'max' | 'elle';
+export type CharId = 'kira' | 'max' | 'elle';
 interface EyeOffset { x: number; y: number }
 
 const MOUTH_SHAPES: Record<MouthShape, string> = {
@@ -36,6 +37,19 @@ const MOUTH_SHAPES: Record<MouthShape, string> = {
   u:      'M 152 228 Q 165 239 178 228',
 };
 const MOUTH_CYCLE: MouthShape[] = ['a', 'e', 'o', 'u', 'a', 'closed', 'e', 'o', 'a', 'closed'];
+
+const LS_EQUIPPED = 'avatar_equipped';
+function loadLocalEquipped(): EquippedSlots {
+  try { return JSON.parse(localStorage.getItem(LS_EQUIPPED) || '{}'); } catch { return {}; }
+}
+
+function ItemLayer({ slot, equipped }: { slot: keyof EquippedSlots; equipped: EquippedSlots }) {
+  const id = equipped[slot];
+  if (!id) return null;
+  const item = ITEM_MAP[id];
+  if (!item) return null;
+  return <item.Render />;
+}
 
 // ─── Shared AnimatedFace (eyes / nose / blush / mouth) ───────────────────────
 interface FaceProps {
@@ -142,16 +156,17 @@ function SpeakingPulse({ c1, c2, c3 }: { c1: string; c2: string; c3: string }) {
 }
 
 // ─── Character avatar props ───────────────────────────────────────────────────
-interface CharAvatarProps {
+export interface CharAvatarProps {
   blink:      boolean;
   mouth:      MouthShape;
   offset:     EyeOffset;
   speakState: SpeakState;
   svgRef:     RefObject<SVGSVGElement | null>;
+  equipped:   EquippedSlots;
 }
 
 // ─── Character: Кира (purple, anime girl) ────────────────────────────────────
-function KiraAvatar({ blink, mouth, offset, speakState, svgRef }: CharAvatarProps) {
+export function KiraAvatar({ blink, mouth, offset, speakState, svgRef, equipped }: CharAvatarProps) {
   return (
     <svg ref={svgRef} viewBox="0 0 330 420" width={260} height={331} xmlns="http://www.w3.org/2000/svg" className="drop-shadow-xl">
       <defs>
@@ -164,7 +179,8 @@ function KiraAvatar({ blink, mouth, offset, speakState, svgRef }: CharAvatarProp
         </radialGradient>
       </defs>
 
-      <circle cx="165" cy="210" r="168" fill="url(#kira-bg)" />
+      {equipped.background ? <ItemLayer slot="background" equipped={equipped} /> : <circle cx="165" cy="210" r="168" fill="url(#kira-bg)" />}
+      <ItemLayer slot="aura" equipped={equipped} />
       <text x="34"  y="78"  fontSize="18" fill="#e879f9" opacity="0.5">✦</text>
       <text x="278" y="92"  fontSize="14" fill="#a78bfa" opacity="0.45">✦</text>
       <text x="48"  y="335" fontSize="12" fill="#c084fc" opacity="0.4">✦</text>
@@ -209,19 +225,21 @@ function KiraAvatar({ blink, mouth, offset, speakState, svgRef }: CharAvatarProp
       <circle cx="108" cy="129" r="7.5" fill="#e879f9" />
       <text x="103" y="133" fontSize="11" fill="white" fontWeight="bold">★</text>
 
+      <ItemLayer slot="hat" equipped={equipped} />
       <AnimatedFace
         blink={blink} offset={offset} mouth={mouth}
         irisGradId="kira-iris" irisDarkColor="#3b0764"
         eyeStroke="#4c1d95" eyebrowStroke="#5b21b6"
         lashes blushColor="#fda4af" mouthStroke="#b45309"
       />
+      <ItemLayer slot="accessory" equipped={equipped} />
       {speakState === 'speaking' && <SpeakingPulse c1="#a855f7" c2="#d946ef" c3="#f0abfc" />}
     </svg>
   );
 }
 
 // ─── Character: Макс (navy blue, spiky hair, boy) ────────────────────────────
-function MaxAvatar({ blink, mouth, offset, speakState, svgRef }: CharAvatarProps) {
+export function MaxAvatar({ blink, mouth, offset, speakState, svgRef, equipped }: CharAvatarProps) {
   const isOpen = mouth !== 'closed';
   const isWide = mouth === 'a' || mouth === 'o';
   const { x: ox, y: oy } = offset;
@@ -238,7 +256,8 @@ function MaxAvatar({ blink, mouth, offset, speakState, svgRef }: CharAvatarProps
         </radialGradient>
       </defs>
 
-      <circle cx="165" cy="210" r="168" fill="url(#max-bg)" />
+      {equipped.background ? <ItemLayer slot="background" equipped={equipped} /> : <circle cx="165" cy="210" r="168" fill="url(#max-bg)" />}
+      <ItemLayer slot="aura" equipped={equipped} />
       <text x="30"  y="82"  fontSize="16" fill="#93c5fd" opacity="0.5">◆</text>
       <text x="280" y="96"  fontSize="12" fill="#60a5fa" opacity="0.45">◆</text>
       <text x="46"  y="340" fontSize="11" fill="#93c5fd" opacity="0.4">◆</text>
@@ -316,13 +335,15 @@ function MaxAvatar({ blink, mouth, offset, speakState, svgRef }: CharAvatarProps
       {isOpen && <path d="M 153 233 Q 165 237 177 233" stroke="#f97316" strokeWidth={1.5} fill="none" strokeLinecap="round" opacity={0.55} />}
       {isWide && <path d="M 151 228 Q 165 228 179 228" stroke="white" strokeWidth={3.5} fill="none" strokeLinecap="round" />}
 
+      <ItemLayer slot="hat" equipped={equipped} />
+      <ItemLayer slot="accessory" equipped={equipped} />
       {speakState === 'speaking' && <SpeakingPulse c1="#3b82f6" c2="#60a5fa" c3="#93c5fd" />}
     </svg>
   );
 }
 
 // ─── Character: Эль (pink twin-tails, teal eyes, energetic) ──────────────────
-function ElleAvatar({ blink, mouth, offset, speakState, svgRef }: CharAvatarProps) {
+export function ElleAvatar({ blink, mouth, offset, speakState, svgRef, equipped }: CharAvatarProps) {
   return (
     <svg ref={svgRef} viewBox="0 0 330 420" width={260} height={331} xmlns="http://www.w3.org/2000/svg" className="drop-shadow-xl">
       <defs>
@@ -335,7 +356,8 @@ function ElleAvatar({ blink, mouth, offset, speakState, svgRef }: CharAvatarProp
         </radialGradient>
       </defs>
 
-      <circle cx="165" cy="210" r="168" fill="url(#elle-bg)" />
+      {equipped.background ? <ItemLayer slot="background" equipped={equipped} /> : <circle cx="165" cy="210" r="168" fill="url(#elle-bg)" />}
+      <ItemLayer slot="aura" equipped={equipped} />
       <text x="36"  y="76"  fontSize="18" fill="#f9a8d4" opacity="0.55">♡</text>
       <text x="274" y="90"  fontSize="14" fill="#67e8f9" opacity="0.5">♡</text>
       <text x="46"  y="338" fontSize="12" fill="#f0abfc" opacity="0.45">♡</text>
@@ -388,19 +410,21 @@ function ElleAvatar({ blink, mouth, offset, speakState, svgRef }: CharAvatarProp
       <circle cx="222" cy="127" r="7.5" fill="#22d3ee" />
       <text x="217" y="131" fontSize="11" fill="white" fontWeight="bold">★</text>
 
+      <ItemLayer slot="hat" equipped={equipped} />
       <AnimatedFace
         blink={blink} offset={offset} mouth={mouth}
         irisGradId="elle-iris" irisDarkColor="#134e4a"
         eyeStroke="#0f766e" eyebrowStroke="#be185d"
         lashes blushColor="#fbcfe8" mouthStroke="#be185d"
       />
+      <ItemLayer slot="accessory" equipped={equipped} />
       {speakState === 'speaking' && <SpeakingPulse c1="#2dd4bf" c2="#06b6d4" c3="#a5f3fc" />}
     </svg>
   );
 }
 
 // ─── Character registry ───────────────────────────────────────────────────────
-interface CharConfig {
+export interface CharConfig {
   id:                CharId;
   name:              string;
   emoji:             string;
@@ -410,10 +434,10 @@ interface CharConfig {
   subtitleClass:     string;
   voiceHints:        RegExp;
   pitch:             number;
-  Avatar:            (props: CharAvatarProps) => JSX.Element;
+  Avatar:            (props: CharAvatarProps) => React.JSX.Element;
 }
 
-const CHARACTERS: CharConfig[] = [
+export const CHARACTERS: CharConfig[] = [
   {
     id: 'kira', name: 'Кира', emoji: '🌸',
     label: '✦ Кира · Наставник',
@@ -459,6 +483,7 @@ export function AvatarPlayer({ content }: AvatarPlayerProps) {
   const [selectedVoice,  setSelectedVoice]  = useState('');   // '' = auto
   const [voices,         setVoices]         = useState<SpeechSynthesisVoice[]>([]);
   const [eyeOffset,      setEyeOffset]      = useState<EyeOffset>({ x: 0, y: 0 });
+  const [equipped,       setEquipped]       = useState<EquippedSlots>({});
 
   const svgRef        = useRef<SVGSVGElement>(null);
   const mouthTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -468,6 +493,14 @@ export function AvatarPlayer({ content }: AvatarPlayerProps) {
   const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
   const char      = useMemo(() => CHARACTERS.find(c => c.id === charId)!, [charId]);
   const plainText = useMemo(() => markdownToSpeech(content || ''), [content]);
+
+  // ── Load equipped items from localStorage ────────────────────────────────
+  useEffect(() => { setEquipped(loadLocalEquipped()); }, []);
+  useEffect(() => {
+    const handler = () => setEquipped(loadLocalEquipped());
+    window.addEventListener('avatar_equipped_change', handler);
+    return () => window.removeEventListener('avatar_equipped_change', handler);
+  }, []);
 
   // ── Load system voices ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -627,7 +660,7 @@ export function AvatarPlayer({ content }: AvatarPlayerProps) {
 
       {/* ── Avatar ── */}
       <div className="relative">
-        <Avatar blink={blink} mouth={mouth} offset={eyeOffset} speakState={speakState} svgRef={svgRef} />
+        <Avatar blink={blink} mouth={mouth} offset={eyeOffset} speakState={speakState} svgRef={svgRef} equipped={equipped} />
         <div
           style={badgeStyle}
           className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-white text-xs font-bold px-5 py-1.5 rounded-full shadow-lg whitespace-nowrap tracking-wide"

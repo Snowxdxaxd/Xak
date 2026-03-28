@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router';
 import {
   LayoutDashboard, BookOpen, MessageCircle, Trophy,
   User, LogOut, Settings, GraduationCap, BarChart3, Users, Shield,
-  Terminal, PieChart, Menu, X, ChevronDown,
+  Terminal, PieChart, Menu, X, ChevronDown, ShoppingBag,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from './ui/button';
@@ -70,6 +70,7 @@ export function Layout({ children }: LayoutProps) {
         { icon: BookOpen,        label: 'Курсы',       to: '/courses' },
         { icon: Terminal,        label: 'Компилятор',  to: '/playground' },
         { icon: Trophy,          label: 'Рейтинг',     to: '/leaderboard' },
+        { icon: ShoppingBag,     label: 'Магазин',     to: '/shop' },
         { icon: MessageCircle,   label: 'Чат',         to: '/messenger' },
       ];
 

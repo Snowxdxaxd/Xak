@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { BookOpen, Flame, CheckCircle2, BarChart3, ArrowRight, Video } from 'lucide-react';
+import { BookOpen, Flame, CheckCircle2, BarChart3, ArrowRight, Video, CircleDollarSign, ShoppingBag } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Progress } from '../components/ui/progress';
@@ -48,14 +48,15 @@ export function Dashboard() {
     </div>
   );
 
-  const p = progress || { level: 1, xp: 0, xpToNextLevel: 100, completedLessons: 0, streak: 0 };
+  const p = progress || { level: 1, xp: 0, xpToNextLevel: 100, completedLessons: 0, streak: 0, coins: 0 };
   const xpPct = Math.round((p.xp / p.xpToNextLevel) * 100);
   const isTeacher = userRole === 'teacher' || userRole === 'superadmin';
 
   const stats = [
-    { icon: BarChart3,    label: 'Уровень',        value: p.level },
-    { icon: CheckCircle2, label: 'Уроков пройдено', value: p.completedLessons },
-    { icon: Flame,        label: 'Серия дней',      value: p.streak },
+    { icon: BarChart3,          label: 'Уровень',        value: p.level },
+    { icon: CheckCircle2,       label: 'Уроков пройдено', value: p.completedLessons },
+    { icon: Flame,              label: 'Серия дней',      value: p.streak },
+    { icon: CircleDollarSign,   label: 'Монеты',         value: p.coins || 0 },
   ];
 
   return (
@@ -107,7 +108,7 @@ export function Dashboard() {
         {/* Stats — только для учеников */}
         {!isTeacher && (
           <>
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               {stats.map((s, i) => (
                 <motion.div key={i} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
                   <Card className="p-5">
@@ -127,7 +128,12 @@ export function Dashboard() {
                   <span className="text-sm text-muted-foreground">{p.xp} / {p.xpToNextLevel} XP</span>
                 </div>
                 <Progress value={xpPct} className="h-2" />
-                <p className="text-xs text-muted-foreground mt-2">До уровня {p.level + 1}: {p.xpToNextLevel - p.xp} XP</p>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-xs text-muted-foreground">До уровня {p.level + 1}: {p.xpToNextLevel - p.xp} XP</p>
+                  <Link to="/shop" className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                    <ShoppingBag className="w-3 h-3" /> В магазин
+                  </Link>
+                </div>
               </Card>
             </motion.div>
           </>

@@ -208,3 +208,20 @@ create table if not exists group_courses (
   assigned_at timestamptz not null default now(),
   primary key (group_id, course_id)
 );
+
+-- ─── RPG Shop ─────────────────────────────────────────────────────────────────
+alter table user_progress add column if not exists coins int not null default 0;
+
+create table if not exists user_inventory (
+  user_id      uuid references app_users(id) on delete cascade,
+  item_id      text not null,
+  purchased_at timestamptz not null default now(),
+  primary key  (user_id, item_id)
+);
+
+create table if not exists user_equipped (
+  user_id  uuid references app_users(id) on delete cascade,
+  slot     text not null,
+  item_id  text not null,
+  primary key (user_id, slot)
+);
