@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
 import { translations, type Lang, type TranslationKey } from '../i18n/translations';
 
 interface LanguageContextType {
@@ -32,6 +32,10 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     (key: TranslationKey): string => translations[lang][key] ?? translations.ru[key] ?? key,
     [lang]
   );
+
+  useEffect(() => {
+    document.documentElement.lang = lang === 'en' ? 'en' : 'ru';
+  }, [lang]);
 
   return (
     <LanguageContext.Provider value={{ lang, setLang, t }}>

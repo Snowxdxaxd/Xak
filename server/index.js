@@ -55,12 +55,12 @@ app.use((req, _res, next) => {
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 function mapUser(row) {
-  return { id: row.id, email: row.email, user_metadata: row.user_metadata || {} };
+  return { id: String(row.id), email: row.email, user_metadata: row.user_metadata || {} };
 }
 
 function issueToken(user) {
   return jwt.sign(
-    { sub: user.id, email: user.email, user_metadata: user.user_metadata || {} },
+    { sub: String(user.id), email: user.email, user_metadata: user.user_metadata || {} },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -105,12 +105,31 @@ async function addNotification(userId, type, title, message, data = {}) {
   } catch (err) { console.error('[notification]', err); }
 }
 
+function parseJsonbArray(val) {
+  if (val == null) return [];
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    try {
+      const j = JSON.parse(val);
+      return Array.isArray(j) ? j : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 async function awardXP(userId, xp, reason) {
   const { rows, rowCount } = await query(
     'select level,xp,xp_to_next_level,completed_lessons,streak,achievements from user_progress where user_id=$1',
     [userId]
   );
-  const p = rowCount ? rows[0] : { level:1, xp:0, xp_to_next_level:100, completed_lessons:0, streak:0, achievements:[] };
+  const p = rowCount
+    ? {
+        ...rows[0],
+        achievements: parseJsonbArray(rows[0].achievements),
+      }
+    : { level: 1, xp: 0, xp_to_next_level: 100, completed_lessons: 0, streak: 0, achievements: [] };
   p.xp = (Number(p.xp) || 0) + xp;
   let leveled = false;
   let coinsEarned = 0;
@@ -130,7 +149,10 @@ async function awardXP(userId, xp, reason) {
     [userId, p.level, p.xp, p.xp_to_next_level, p.completed_lessons, p.streak, JSON.stringify(p.achievements||[])]
   );
   if (coinsEarned > 0) {
-    await query('update user_progress set coins=coins+$1 where user_id=$2', [coinsEarned, userId]);
+    await query(
+      'update user_progress set coins=coalesce(coins,0)+$1 where user_id=$2',
+      [coinsEarned, userId]
+    );
   }
   if (leveled) {
     await addNotification(userId, 'achievement', 'Новый уровень!', `Поздравляем! Вы достигли уровня ${p.level}.`, { level: p.level });
@@ -154,7 +176,7 @@ async function grantAchievement(userId, achievement) {
   if (!rowCount) {
     await query('insert into user_progress(user_id) values($1) on conflict do nothing', [userId]);
   }
-  const list = rowCount ? (rows[0].achievements || []) : [];
+  const list = rowCount ? parseJsonbArray(rows[0].achievements) : [];
   if (list.some((a) => a?.id === achievement.id)) return false;
   const next = [...list, { ...achievement, earnedAt: new Date().toISOString() }];
   await query('update user_progress set achievements=$1, updated_at=now() where user_id=$2', [JSON.stringify(next), userId]);
@@ -353,6 +375,21 @@ async function ensureSchemaCompat() {
     )`,
     `create index if not exists idx_media_message on media_files(message_id)`,
     `create index if not exists idx_media_user    on media_files(user_id)`,
+    // user_progress.coins + shop (older DB volumes may lack these)
+    `alter table if exists user_progress add column if not exists coins int not null default 0`,
+    `update user_progress set coins = 0 where coins is null`,
+    `create table if not exists user_inventory (
+      user_id uuid references app_users(id) on delete cascade,
+      item_id text not null,
+      purchased_at timestamptz not null default now(),
+      primary key (user_id, item_id)
+    )`,
+    `create table if not exists user_equipped (
+      user_id uuid references app_users(id) on delete cascade,
+      slot text not null,
+      item_id text not null,
+      primary key (user_id, slot)
+    )`,
     // banned_emails: block re-registration after account deletion
     `create table if not exists banned_emails (
       email text primary key,
@@ -1337,24 +1374,56 @@ app.post('/lessons/:id/complete', authRequired, async (req, res) => {
     if (completedLessons >= 10) await grantAchievement(req.user.sub, { id: 'ten-lessons', title: 'Десять из десяти', description: 'Пройти 10 уроков', icon: 'award' });
     const { rows: lr } = await query('select title,course_id from lessons where id=$1', [req.params.id]);
     await addNotification(req.user.sub, 'system', 'Урок пройден!', `Вы завершили урок "${lr[0]?.title || ''}" и получили 50 XP!`, { xp: 50 });
+    let xpGained = 50;
+    let progressOut = p;
     const courseId = lr[0]?.course_id;
     if (courseId) {
-      const { rows: courseRows } = await query('select lessons_count, title from courses where id=$1', [courseId]);
-      if (courseRows.length && courseRows[0].lessons_count > 0) {
+      const { rows: totalRows } = await query(
+        'select count(*)::int as cnt from lessons where course_id=$1',
+        [courseId]
+      );
+      const totalLessons = Number(totalRows[0]?.cnt || 0);
+      if (totalLessons > 0) {
         const { rows: doneRows } = await query(
-          `select count(*) as cnt from lesson_completions lc join lessons l on l.id=lc.lesson_id
+          `select count(*)::int as cnt from lesson_completions lc
+           join lessons l on l.id=lc.lesson_id
            where lc.user_id=$1 and l.course_id=$2`,
           [req.user.sub, courseId]
         );
         const doneCnt = Number(doneRows[0]?.cnt || 0);
-        if (doneCnt >= courseRows[0].lessons_count) {
-          await grantAchievement(req.user.sub, { id: `course-${courseId}`, title: 'Курс пройден!', description: `Пройден курс «${courseRows[0].title}»`, icon: 'graduation-cap' });
-          await awardXP(req.user.sub, 100, 'course_complete');
-          await addNotification(req.user.sub, 'achievement', 'Курс завершён!', `Вы полностью прошли курс «${courseRows[0].title}» и получили 100 XP!`, { courseId });
+        if (doneCnt >= totalLessons) {
+          const { rows: courseRows } = await query('select title from courses where id=$1', [courseId]);
+          const courseTitle = courseRows[0]?.title || '';
+          const newlyGranted = await grantAchievement(req.user.sub, {
+            id: `course-${courseId}`,
+            title: 'Курс пройден!',
+            description: `Пройден курс «${courseTitle}»`,
+            icon: 'graduation-cap',
+          });
+          if (newlyGranted) {
+            progressOut = await awardXP(req.user.sub, 100, 'course_complete');
+            xpGained += 100;
+            await addNotification(
+              req.user.sub,
+              'achievement',
+              'Курс завершён!',
+              `Вы полностью прошли курс «${courseTitle}» и получили 100 XP!`,
+              { courseId }
+            );
+          }
         }
       }
+      await query(
+        'update courses set lessons_count=$1 where id=$2 and lessons_count is distinct from $1',
+        [totalLessons, courseId]
+      );
     }
-    res.json({ xpGained: 50, level: p.level, xp: p.xp, xpToNextLevel: p.xp_to_next_level });
+    res.json({
+      xpGained,
+      level: progressOut.level,
+      xp: progressOut.xp,
+      xpToNextLevel: progressOut.xp_to_next_level,
+    });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка завершения урока' }); }
 });
 
@@ -1650,15 +1719,43 @@ app.get('/media/quota', authRequired, async (req, res) => {
 
 app.get('/progress', authRequired, async (req, res) => {
   try {
+    const uid = req.user.sub;
+    await query(
+      'insert into user_progress(user_id) values($1) on conflict (user_id) do nothing',
+      [uid]
+    );
     const { rows, rowCount } = await query(
       `select level,xp,xp_to_next_level as "xpToNextLevel",
         completed_lessons as "completedLessons",streak,achievements,
-        coalesce(coins,0) as coins
-       from user_progress where user_id=$1`, [req.user.sub]
+        coalesce(coins,0)::int as coins
+       from user_progress where user_id=$1`,
+      [uid]
     );
-    if (!rowCount) return res.json({ level:1,xp:0,xpToNextLevel:100,completedLessons:0,streak:0,achievements:[],coins:0 });
-    res.json(rows[0]);
-  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка прогресса' }); }
+    if (!rowCount) {
+      return res.json({
+        level: 1,
+        xp: 0,
+        xpToNextLevel: 100,
+        completedLessons: 0,
+        streak: 0,
+        achievements: [],
+        coins: 0,
+      });
+    }
+    const r = rows[0];
+    res.json({
+      level: Number(r.level) || 1,
+      xp: Number(r.xp) || 0,
+      xpToNextLevel: Number(r.xpToNextLevel) || 100,
+      completedLessons: Number(r.completedLessons) || 0,
+      streak: Number(r.streak) || 0,
+      achievements: parseJsonbArray(r.achievements),
+      coins: Number(r.coins) || 0,
+    });
+  } catch (err) {
+    console.error('[progress]', err);
+    res.status(500).json({ error: 'Ошибка прогресса' });
+  }
 });
 
 // ─── leaderboard ─────────────────────────────────────────────────────────────
@@ -1707,7 +1804,10 @@ app.post('/shop/buy', authRequired, async (req, res) => {
     if ((prog?.coins ?? 0) < price) return res.status(400).json({ error: 'Недостаточно монет' });
     const { rows: [exists] } = await query('select 1 from user_inventory where user_id=$1 and item_id=$2', [uid, itemId]);
     if (exists) return res.status(400).json({ error: 'Уже куплено' });
-    await query('update user_progress set coins=coins-$1 where user_id=$2', [price, uid]);
+    await query(
+      'update user_progress set coins=greatest(0,coalesce(coins,0)-$1) where user_id=$2',
+      [price, uid]
+    );
     await query('insert into user_inventory (user_id, item_id) values ($1,$2)', [uid, itemId]);
     const { rows: [updated] } = await query('select coalesce(coins,0) as coins from user_progress where user_id=$1', [uid]);
     res.json({ ok: true, coins: updated.coins });
@@ -1862,10 +1962,31 @@ app.get('/users/:id/public-profile', authRequired, async (req, res) => {
     const user = ur[0];
     const { rows: pr } = await query(
       `select level,xp,xp_to_next_level as "xpToNextLevel",
-        completed_lessons as "completedLessons",streak,achievements
-       from user_progress where user_id=$1`, [req.params.id]
+        completed_lessons as "completedLessons",streak,achievements,
+        coalesce(coins,0)::int as coins
+       from user_progress where user_id=$1`,
+      [req.params.id]
     );
-    const progress = pr[0] || { level: 1, xp: 0, xpToNextLevel: 100, completedLessons: 0, streak: 0, achievements: [] };
+    const raw = pr[0];
+    const progress = raw
+      ? {
+          level: Number(raw.level) || 1,
+          xp: Number(raw.xp) || 0,
+          xpToNextLevel: Number(raw.xpToNextLevel) || 100,
+          completedLessons: Number(raw.completedLessons) || 0,
+          streak: Number(raw.streak) || 0,
+          achievements: parseJsonbArray(raw.achievements),
+          coins: Number(raw.coins) || 0,
+        }
+      : {
+          level: 1,
+          xp: 0,
+          xpToNextLevel: 100,
+          completedLessons: 0,
+          streak: 0,
+          achievements: [],
+          coins: 0,
+        };
     const { rows: cr } = await query(
       `select c.id,c.title,c.lessons_count as "lessonsCount",
         count(lc.lesson_id) as "completedCount"

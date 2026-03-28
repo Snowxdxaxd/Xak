@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ShoppingBag, Coins, CheckCircle2 } from 'lucide-react';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
+import { supabase, API_BASE } from '../lib/supabase';
 import {
   SHOP_ITEMS, ITEM_MAP,
   RARITY_BORDER, RARITY_BADGE, RARITY_LABEL, CATEGORY_LABEL,
@@ -75,7 +75,7 @@ export function AvatarShop() {
     const token = getToken();
     if (!token) { setLoading(false); return; }
 
-    fetch('/api/shop/inventory', { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API_BASE}/shop/inventory`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(data => {
         setCoins(data.coins ?? 0);
@@ -95,7 +95,7 @@ export function AvatarShop() {
     if (coins < item.price) { toast.error(`Не хватает монет! Нужно ${item.price} 🪙`); return; }
     setBuying(item.id);
     try {
-      const r = await fetch('/api/shop/buy', {
+      const r = await fetch(`${API_BASE}/shop/buy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ itemId: item.id }),

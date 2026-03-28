@@ -14,7 +14,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Progress } from '../components/ui/progress';
-import { api, supabase } from '../lib/supabase';
+import { api, supabase, API_BASE } from '../lib/supabase';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -61,25 +61,26 @@ export function LessonView() {
 
   const checkCompleted = async () => {
     const tk = await getToken(); if (!tk) return;
-    const r = await fetch(`/api/lessons/${id}/completed`, { headers: { Authorization: `Bearer ${tk}` } });
+    const r = await fetch(`${API_BASE}/lessons/${id}/completed`, { headers: { Authorization: `Bearer ${tk}` } });
     const d = await r.json();
     setCompleted(d.completed || false);
   };
 
   const loadQuiz = async () => {
-    const r = await fetch(`/api/lessons/${id}/quiz`);
+    const r = await fetch(`${API_BASE}/lessons/${id}/quiz`);
     const d = await r.json();
     setQuizQuestions(d.questions || []);
   };
 
   const handleCompleteLesson = async () => {
     const tk = await getToken(); if (!tk) return;
-    const r = await fetch(`/api/lessons/${id}/complete`, { method: 'POST', headers: { Authorization: `Bearer ${tk}` } });
+    const r = await fetch(`${API_BASE}/lessons/${id}/complete`, { method: 'POST', headers: { Authorization: `Bearer ${tk}` } });
     const d = await r.json();
     if (!r.ok) { toast.error(d.error); return; }
     if (d.alreadyCompleted) { toast.info(t('lesson_already_completed_msg')); return; }
     setCompleted(true);
-    toast.success(`${t('lesson_complete')}! +${d.xpGained} ${t('lesson_complete_xp')}`);
+    const gained = typeof d.xpGained === 'number' ? d.xpGained : 50;
+    toast.success(`${t('lesson_complete')}! +${gained} ${t('lesson_complete_xp')}`);
   };
 
   const handleSubmitCode = async () => {
@@ -87,7 +88,7 @@ export function LessonView() {
     setSubmitting(true);
     try {
       const tk = await getToken(); if (!tk) return;
-      const r = await fetch('/api/submissions', {
+      const r = await fetch(`${API_BASE}/submissions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tk}` },
         body: JSON.stringify({ lessonId: id, courseId: lesson?.courseId, code }),
@@ -95,9 +96,9 @@ export function LessonView() {
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       setLastResult(d.submission);
-      if (d.submission.status === 'passed')       toast.success('Задание выполнено правильно!');
-      else if (d.submission.status === 'failed')  toast.error(d.submission.feedback || 'Неверно. Попробуй ещё раз.');
-      else                                         toast.info('Задание отправлено на проверку преподавателю');
+      if (d.submission.status === 'passed')       toast.success(t('lesson_code_passed'));
+      else if (d.submission.status === 'failed')  toast.error(d.submission.feedback || t('lesson_code_failed'));
+      else                                         toast.info(t('lesson_code_pending'));
     } catch (err: any) { toast.error(err.message); }
     finally { setSubmitting(false); }
   };
@@ -107,7 +108,7 @@ export function LessonView() {
     setQuizSubmitting(true);
     try {
       const tk = await getToken(); if (!tk) return;
-      const r = await fetch(`/api/lessons/${id}/quiz-attempt`, {
+      const r = await fetch(`${API_BASE}/lessons/${id}/quiz-attempt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tk}` },
         body: JSON.stringify({ answers: quizAnswers }),
@@ -122,13 +123,13 @@ export function LessonView() {
   const handleAddQuestion = async () => {
     const tk = await getToken(); if (!tk) return;
     const opts = newQ.options.filter(o => o.trim());
-    const r = await fetch(`/api/lessons/${id}/quiz`, {
+    const r = await fetch(`${API_BASE}/lessons/${id}/quiz`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tk}` },
       body: JSON.stringify({ question: newQ.question, type: newQ.type, options: opts, correctAnswer: newQ.correctAnswer, points: newQ.points }),
     });
     if (!r.ok) { toast.error(t('error')); return; }
-    toast.success('Вопрос добавлен');
+    toast.success(t('lesson_question_added'));
     setNewQ({ question: '', type: 'single', options: ['', '', '', ''], correctAnswer: '', points: 10 });
     setShowAddQ(false);
     loadQuiz();
@@ -136,7 +137,7 @@ export function LessonView() {
 
   const handleDeleteQuestion = async (qId: string) => {
     const tk = await getToken(); if (!tk) return;
-    await fetch(`/api/lessons/${id}/quiz/${qId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${tk}` } });
+    await fetch(`${API_BASE}/lessons/${id}/quiz/${qId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${tk}` } });
     loadQuiz();
   };
 
@@ -145,7 +146,7 @@ export function LessonView() {
     const tk = await getToken(); if (!tk) return;
     await api.addComment(id!, newComment, rating, tk);
     setNewComment(''); setRating(5);
-    toast.success('Комментарий добавлен');
+    toast.success(t('lesson_comment_added'));
     loadComments();
   };
 
@@ -196,7 +197,7 @@ export function LessonView() {
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <Volume2 className="w-3.5 h-3.5" /> Озвучка с Кирой ✦
+            <Volume2 className="w-3.5 h-3.5" /> {t('lesson_avatar_voice')}
           </button>
         </div>
 

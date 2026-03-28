@@ -1,22 +1,34 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams, useLocation } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { Card } from '../components/ui/card';
 import { Progress } from '../components/ui/progress';
 import { Badge } from '../components/ui/badge';
-import { supabase, api } from '../lib/supabase';
+import { supabase, api, API_BASE } from '../lib/supabase';
 import { useLanguage } from '../context/LanguageContext';
-import { BarChart3, BookOpen, CheckCircle2, Flame, TrendingUp, Award, Trophy, GraduationCap, Star, Crown, Sparkles, Footprints, Medal } from 'lucide-react';
+import {
+  BarChart3, BookOpen, CheckCircle2, Flame, TrendingUp, Award, Trophy, GraduationCap, Star, Crown,
+  Sparkles, Footprints, Medal, CircleDollarSign,
+} from 'lucide-react';
 
 export function Profile() {
   const params = useParams();
   const { user, userRole, loading } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const location = useLocation();
   const viewedUserId = params.id;
   const isOwnProfile = !viewedUserId || viewedUserId === user?.id;
-  const [progress, setProgress] = useState<any>({ level:1,xp:0,xpToNextLevel:100,completedLessons:0,streak:0,achievements:[] });
+  const [progress, setProgress] = useState<any>({
+    level: 1,
+    xp: 0,
+    xpToNextLevel: 100,
+    completedLessons: 0,
+    streak: 0,
+    achievements: [],
+    coins: 0,
+  });
   const [grades, setGrades] = useState<any[]>([]);
   const [myCourses, setMyCourses] = useState<any[]>([]);
   const [publicProfile, setPublicProfile] = useState<any>(null);
@@ -26,7 +38,7 @@ export function Profile() {
 
   useEffect(() => {
     if (user) loadAll();
-  }, [user, viewedUserId]);
+  }, [user, viewedUserId, location.pathname]);
 
   const loadAll = async () => {
     try {
@@ -37,7 +49,20 @@ export function Profile() {
         const pd = await api.getPublicProfile(viewedUserId, t);
         if (pd?.profile) {
           setPublicProfile(pd.profile);
-          setProgress(pd.profile.progress || progress);
+          const pr = pd.profile.progress || {};
+          const merged = {
+            level: 1,
+            xp: 0,
+            xpToNextLevel: 100,
+            completedLessons: 0,
+            streak: 0,
+            achievements: [] as any[],
+            coins: 0,
+            ...pr,
+          };
+          merged.achievements = Array.isArray(pr.achievements) ? pr.achievements : [];
+          merged.coins = pr.coins ?? 0;
+          setProgress(merged);
           setMyCourses(pd.profile.courses || []);
         }
         setGrades([]);
@@ -46,10 +71,18 @@ export function Profile() {
       }
       const [pd, gd, cd] = await Promise.allSettled([
         api.getUserProgress(t),
-        fetch(`/api/grades`, { headers: { Authorization: `Bearer ${t}` } }).then(r => r.json()),
-        fetch(`/api/my-courses`, { headers: { Authorization: `Bearer ${t}` } }).then(r => r.json()),
+        fetch(`${API_BASE}/grades`, { headers: { Authorization: `Bearer ${t}` } }).then(r => r.json()),
+        fetch(`${API_BASE}/my-courses`, { headers: { Authorization: `Bearer ${t}` } }).then(r => r.json()),
       ]);
-      if (pd.status === 'fulfilled' && pd.value && !pd.value.error) setProgress(pd.value);
+      if (pd.status === 'fulfilled' && pd.value && !pd.value.error) {
+        const v = pd.value;
+        setProgress((prev: any) => {
+          const merged = { ...prev, ...v };
+          merged.achievements = Array.isArray(v.achievements) ? v.achievements : [];
+          merged.coins = v.coins ?? 0;
+          return merged;
+        });
+      }
       if (gd.status === 'fulfilled' && gd.value?.grades) setGrades(gd.value.grades);
       if (cd.status === 'fulfilled' && cd.value?.courses) setMyCourses(cd.value.courses);
     } catch (err) { console.error(err); }
@@ -103,12 +136,13 @@ export function Profile() {
         {!isTeacher && (
           <>
             {/* Stats cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 mb-6">
               {[
-                { icon: BarChart3,    label: t('profile_level'),   value: progress.level },
-                { icon: TrendingUp,   label: t('profile_xp'),      value: progress.xp },
-                { icon: CheckCircle2, label: t('profile_lessons'), value: progress.completedLessons },
-                { icon: Flame,        label: t('profile_streak'),  value: progress.streak },
+                { icon: BarChart3,        label: t('profile_level'),    value: progress.level },
+                { icon: TrendingUp,       label: t('profile_xp'),       value: progress.xp },
+                { icon: CheckCircle2,     label: t('profile_lessons'),  value: progress.completedLessons },
+                { icon: Flame,            label: t('profile_streak'),   value: progress.streak },
+                { icon: CircleDollarSign, label: t('dashboard_coins'),  value: progress.coins ?? 0 },
               ].map((s, i) => (
                 <Card key={i} className="p-4">
                   <s.icon className="w-4 h-4 text-muted-foreground mb-2" />

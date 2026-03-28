@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useLocation } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -7,30 +7,47 @@ import { BookOpen, Flame, CheckCircle2, BarChart3, ArrowRight, Video, CircleDoll
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Progress } from '../components/ui/progress';
-import { api } from '../lib/supabase';
-import { supabase } from '../lib/supabase';
+import { api, supabase, API_BASE } from '../lib/supabase';
 import { motion } from 'motion/react';
 
 export function Dashboard() {
   const { user, userRole, loading } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const location = useLocation();
   const [progress, setProgress] = useState<any>(null);
   const [courses, setCourses] = useState<any[]>([]);
   const [activeMeetings, setActiveMeetings] = useState<any[]>([]);
 
   useEffect(() => { if (!loading && !user) navigate('/login'); }, [user, loading, navigate]);
-  useEffect(() => { if (user) loadData(); }, [user]);
+  useEffect(() => {
+    if (!user || location.pathname !== '/dashboard') return;
+    loadData();
+  }, [user, location.pathname]);
 
   const loadData = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
         const pd = await api.getUserProgress(session.access_token);
-        if (pd && !pd.error) setProgress(pd);
+        if (pd && !pd.error) {
+          const merged = {
+            level: 1,
+            xp: 0,
+            xpToNextLevel: 100,
+            completedLessons: 0,
+            streak: 0,
+            achievements: [] as any[],
+            coins: 0,
+            ...pd,
+          };
+          merged.achievements = Array.isArray(pd.achievements) ? pd.achievements : [];
+          merged.coins = pd.coins ?? 0;
+          setProgress(merged);
+        }
         if (userRole === 'student') {
           try {
-            const mr = await fetch('/api/student/active-meetings', {
+            const mr = await fetch(`${API_BASE}/student/active-meetings`, {
               headers: { Authorization: `Bearer ${session.access_token}` },
             });
             if (mr.ok) { const md = await mr.json(); setActiveMeetings(md.meetings || []); }
