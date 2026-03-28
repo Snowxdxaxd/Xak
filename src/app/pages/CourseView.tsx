@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { BookOpen, Plus, ArrowLeft, CheckCircle2, Pencil, Trash2, Key, ToggleLeft, Lock, Users, UserMinus, UserPlus } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
+import { BookOpen, Plus, ArrowLeft, CheckCircle2, Pencil, Trash2, Key, ToggleLeft, Lock, Users, UserMinus, UserPlus, Sparkles } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -18,6 +19,7 @@ import { motion } from 'motion/react';
 export function CourseView() {
   const { id } = useParams();
   const { user, userRole, loading } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [course, setCourse] = useState<any>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -33,6 +35,9 @@ export function CourseView() {
   const [enrolledStudents, setEnrolledStudents] = useState<any[]>([]);
   const [enrollEmail, setEnrollEmail] = useState('');
   const [showEnroll, setShowEnroll] = useState(false);
+  // Recommendations
+  const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [courseComplete, setCourseComplete] = useState(false);
 
   useEffect(() => { if (!loading && !user) navigate('/login'); }, [user, loading, navigate]);
   useEffect(() => { if (id) loadCourse(); }, [id]);
@@ -41,6 +46,23 @@ export function CourseView() {
       loadEnrolled();
     }
   }, [id, course, userRole]);
+
+  useEffect(() => {
+    if (id && user && userRole === 'student') loadRecommendations();
+  }, [id, user, userRole]);
+
+  const loadRecommendations = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = {};
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+      const res = await fetch(`/api/courses/${id}/recommendations`, { headers });
+      if (!res.ok) return;
+      const data = await res.json();
+      setCourseComplete(data.courseComplete || false);
+      setRecommendations(data.recommendations || []);
+    } catch {}
+  };
 
   const loadCourse = async () => {
     try {
@@ -346,6 +368,40 @@ export function CourseView() {
               </motion.div>
             ))}
           </div>
+        )}
+
+        {/* Recommendations block — shown to students who completed the course */}
+        {userRole === 'student' && courseComplete && recommendations.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="mt-8"
+          >
+            <Card className="p-6 border-primary/20 bg-primary/3">
+              <div className="flex items-center gap-2 mb-1">
+                <Sparkles className="w-5 h-5 text-primary" />
+                <h2 className="font-bold text-lg">{t('rec_title')}</h2>
+              </div>
+              <p className="text-sm text-muted-foreground mb-5">{t('rec_subtitle')}</p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {recommendations.map((rec) => (
+                  <Link to={`/course/${rec.id}`} key={rec.id}>
+                    <div className="flex items-start gap-3 p-4 rounded-xl border bg-card hover:shadow-md transition-shadow group">
+                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <BookOpen className="w-4 h-4 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm group-hover:underline line-clamp-1">{rec.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{rec.description}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{rec.lessonsCount || 0} {t('rec_lessons')}</p>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </Card>
+          </motion.div>
         )}
 
         {/* Edit lesson dialog */}

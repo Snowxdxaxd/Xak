@@ -6,6 +6,7 @@ interface AuthContextType {
   userRole: 'student' | 'teacher' | 'parent' | 'superadmin' | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  refreshUser: (newToken: string, newUser: AppUser) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -13,6 +14,7 @@ const AuthContext = createContext<AuthContextType>({
   userRole: null,
   loading: true,
   signOut: async () => {},
+  refreshUser: () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -23,17 +25,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check active session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setUserRole((session?.user?.user_metadata?.role as any) ?? 'student');
       setLoading(false);
     });
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       setUserRole((session?.user?.user_metadata?.role as any) ?? 'student');
       setLoading(false);
@@ -48,8 +46,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserRole(null);
   };
 
+  const refreshUser = (newToken: string, newUser: AppUser) => {
+    localStorage.setItem('app_session', JSON.stringify({ access_token: newToken, user: newUser }));
+    setUser(newUser);
+    setUserRole((newUser.user_metadata?.role as any) ?? 'student');
+  };
+
   return (
-    <AuthContext.Provider value={{ user, userRole, loading, signOut }}>
+    <AuthContext.Provider value={{ user, userRole, loading, signOut, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

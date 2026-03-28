@@ -3,9 +3,10 @@ import { Link, useLocation, useNavigate } from 'react-router';
 import {
   LayoutDashboard, BookOpen, MessageCircle, Trophy,
   User, LogOut, Settings, GraduationCap, BarChart3, Users, Shield,
-  Terminal, PieChart, Menu, X, ChevronDown, ShoppingBag,
+  Terminal, PieChart, Menu, X, ChevronDown, Globe, ShoppingBag,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { Button } from './ui/button';
 import { ThemeToggle } from './ThemeToggle';
 import { NotificationBell } from './NotificationBell';
@@ -14,6 +15,7 @@ interface LayoutProps { children: ReactNode }
 
 export function Layout({ children }: LayoutProps) {
   const { user, userRole, signOut } = useAuth();
+  const { t, lang, setLang } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -41,52 +43,52 @@ export function Layout({ children }: LayoutProps) {
 
   const navItems = isSuperAdmin
     ? [
-        { icon: LayoutDashboard, label: 'Главная',     to: '/dashboard' },
-        { icon: BookOpen,        label: 'Курсы',       to: '/courses' },
-        { icon: Users,           label: 'Классы',      to: '/groups' },
-        { icon: Terminal,        label: 'Компилятор',  to: '/playground' },
-        { icon: Trophy,          label: 'Рейтинг',     to: '/leaderboard' },
-        { icon: MessageCircle,   label: 'Чат',         to: '/messenger' },
+        { icon: LayoutDashboard, label: t('nav_home'),     to: '/dashboard' },
+        { icon: BookOpen,        label: t('nav_courses'),   to: '/courses' },
+        { icon: Users,           label: t('nav_classes'),   to: '/groups' },
+        { icon: Terminal,        label: t('nav_compiler'),  to: '/playground' },
+        { icon: Trophy,          label: t('nav_rating'),    to: '/leaderboard' },
+        { icon: MessageCircle,   label: t('nav_chat'),      to: '/messenger' },
       ]
     : isTeacher
     ? [
-        { icon: LayoutDashboard, label: 'Главная',     to: '/dashboard' },
-        { icon: PieChart,        label: 'Дашборд',     to: '/teacher-dashboard' },
-        { icon: BookOpen,        label: 'Курсы',       to: '/courses' },
-        { icon: Users,           label: 'Классы',      to: '/groups' },
-        { icon: Terminal,        label: 'Компилятор',  to: '/playground' },
-        { icon: MessageCircle,   label: 'Чат',         to: '/messenger' },
+        { icon: LayoutDashboard, label: t('nav_home'),      to: '/dashboard' },
+        { icon: PieChart,        label: t('nav_dashboard'), to: '/teacher-dashboard' },
+        { icon: BookOpen,        label: t('nav_courses'),   to: '/courses' },
+        { icon: Users,           label: t('nav_classes'),   to: '/groups' },
+        { icon: Terminal,        label: t('nav_compiler'),  to: '/playground' },
+        { icon: MessageCircle,   label: t('nav_chat'),      to: '/messenger' },
       ]
     : isParent
     ? [
-        { icon: LayoutDashboard, label: 'Главная',     to: '/dashboard' },
-        { icon: Users,           label: 'Мои ученики', to: '/parent-dashboard' },
-        { icon: Terminal,        label: 'Компилятор',  to: '/playground' },
-        { icon: MessageCircle,   label: 'Чат',         to: '/messenger' },
+        { icon: LayoutDashboard, label: t('nav_home'),        to: '/dashboard' },
+        { icon: Users,           label: t('nav_my_students'), to: '/parent-dashboard' },
+        { icon: Terminal,        label: t('nav_compiler'),    to: '/playground' },
+        { icon: MessageCircle,   label: t('nav_chat'),        to: '/messenger' },
       ]
     : [
-        { icon: LayoutDashboard, label: 'Главная',     to: '/dashboard' },
-        { icon: BarChart3,       label: 'Оценки',      to: '/grades' },
-        { icon: BookOpen,        label: 'Курсы',       to: '/courses' },
-        { icon: Terminal,        label: 'Компилятор',  to: '/playground' },
-        { icon: Trophy,          label: 'Рейтинг',     to: '/leaderboard' },
-        { icon: ShoppingBag,     label: 'Магазин',     to: '/shop' },
-        { icon: MessageCircle,   label: 'Чат',         to: '/messenger' },
+        { icon: LayoutDashboard, label: t('nav_home'),     to: '/dashboard' },
+        { icon: BarChart3,       label: t('nav_grades'),   to: '/grades' },
+        { icon: BookOpen,        label: t('nav_courses'),  to: '/courses' },
+        { icon: Terminal,        label: t('nav_compiler'), to: '/playground' },
+        { icon: Trophy,          label: t('nav_rating'),   to: '/leaderboard' },
+        { icon: ShoppingBag,     label: t('nav_shop'),     to: '/shop' },
+        { icon: MessageCircle,   label: t('nav_chat'),     to: '/messenger' },
       ];
 
   const roleLabel = isSuperAdmin
-    ? 'Главный администратор'
-    : isTeacher ? 'Преподаватель'
-    : isParent  ? 'Родитель'
-    : 'Ученик';
+    ? t('role_superadmin')
+    : isTeacher ? t('role_teacher')
+    : isParent  ? t('role_parent')
+    : t('role_student');
 
   const menuItems = [
-    ...(!isTeacher && !isSuperAdmin ? [{ icon: User, label: 'Мой профиль', to: '/profile' }] : []),
-    { icon: Settings, label: 'Настройки', to: '/settings' },
-    ...(isTeacher ? [{ icon: PieChart, label: 'Дашборд преподавателя', to: '/teacher-dashboard' }] : []),
-    ...(isTeacher || isSuperAdmin ? [{ icon: GraduationCap, label: 'Проверить задания', to: '/admin' }] : []),
-    ...(isSuperAdmin ? [{ icon: Shield, label: 'Панель администратора', to: '/admin' }] : []),
-    ...(isParent ? [{ icon: Users, label: 'Мои ученики', to: '/parent-dashboard' }] : []),
+    ...(!isTeacher && !isSuperAdmin ? [{ icon: User,          label: t('menu_profile'),          to: '/profile' }] : []),
+    { icon: Settings,               label: t('menu_settings'),                                    to: '/settings' },
+    ...(isTeacher ? [{ icon: PieChart,      label: t('menu_teacher_dashboard'), to: '/teacher-dashboard' }] : []),
+    ...(isTeacher || isSuperAdmin ? [{ icon: GraduationCap, label: t('menu_check_tasks'),       to: '/admin' }] : []),
+    ...(isSuperAdmin ? [{ icon: Shield,     label: t('menu_admin_panel'),        to: '/admin' }] : []),
+    ...(isParent ? [{ icon: Users,          label: t('nav_my_students'),          to: '/parent-dashboard' }] : []),
   ];
 
   const NavLink = ({ item }: { item: typeof navItems[0] }) => {
@@ -128,6 +130,16 @@ export function Layout({ children }: LayoutProps) {
 
           {/* Right: utilities + user menu */}
           <div className="flex items-center gap-1">
+            {/* Language switcher */}
+            <button
+              onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}
+              className="flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-accent transition-colors text-xs font-medium text-muted-foreground"
+              title={lang === 'ru' ? 'Switch to English' : 'Переключить на Русский'}
+            >
+              <Globe className="w-4 h-4" />
+              <span>{lang === 'ru' ? 'EN' : 'RU'}</span>
+            </button>
+
             <ThemeToggle />
             <NotificationBell />
 
@@ -162,13 +174,23 @@ export function Layout({ children }: LayoutProps) {
                       {item.label}
                     </Link>
                   ))}
+                  {/* Language toggle in menu */}
                   <div className="border-t mt-1 pt-1">
+                    <button
+                      onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}
+                      className="flex items-center gap-2 px-3 py-2 hover:bg-accent transition-colors cursor-pointer w-full text-left text-sm"
+                    >
+                      <Globe className="w-4 h-4 text-muted-foreground" />
+                      {lang === 'ru' ? 'English' : 'Русский'}
+                    </button>
+                  </div>
+                  <div className="border-t pt-1">
                     <button
                       onClick={async () => { setMenuOpen(false); await signOut(); navigate('/'); }}
                       className="flex items-center gap-2 px-3 py-2 hover:bg-accent transition-colors cursor-pointer w-full text-destructive text-left"
                     >
                       <LogOut className="w-4 h-4" />
-                      Выйти
+                      {t('menu_logout')}
                     </button>
                   </div>
                 </div>
@@ -198,7 +220,7 @@ export function Layout({ children }: LayoutProps) {
         `}>
           {/* Mobile close button */}
           <div className="flex items-center justify-between px-3 py-2 border-b lg:hidden">
-            <span className="text-sm font-medium text-muted-foreground">Навигация</span>
+            <span className="text-sm font-medium text-muted-foreground">{t('sidebar_nav')}</span>
             <button onClick={() => setSidebarOpen(false)} className="p-1 rounded hover:bg-accent">
               <X className="w-4 h-4" />
             </button>

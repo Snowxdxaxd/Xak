@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Progress } from '../components/ui/progress';
@@ -16,15 +17,9 @@ function gradeColor(g: number) {
   return 'text-red-500';
 }
 
-function gradeLabel(g: number) {
-  if (g >= 90) return 'Отлично';
-  if (g >= 75) return 'Хорошо';
-  if (g >= 60) return 'Удовл.';
-  return 'Неуд.';
-}
-
 export function GradesPage() {
   const { user, loading } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [grades, setGrades] = useState<any[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
@@ -68,11 +63,16 @@ export function GradesPage() {
     return Math.round(graded.reduce((s, g) => s + g.grade, 0) / graded.length);
   };
 
+  const gradeLbl = (g: number) => {
+    if (g >= 90) return t('grades_excellent');
+    if (g >= 75) return t('grades_good');
+    if (g >= 60) return t('grades_satisfactory');
+    return t('grades_fail');
+  };
+
   const overallAvg = avg(grades);
   const passed = grades.filter(g => g.status === 'passed' || g.grade >= 60).length;
   const courses = Object.keys(byCourse);
-
-  const filtered = activeTab === 'all' ? grades : byCourse[activeTab]?.grades || [];
   const filteredByCourse = activeTab === 'all' ? Object.entries(byCourse) : [[activeTab, byCourse[activeTab]]];
 
   const statusIcon = (g: any) => {
@@ -87,22 +87,21 @@ export function GradesPage() {
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="flex items-center gap-3 mb-6">
           <BarChart3 className="w-5 h-5 text-muted-foreground" />
-          <h1 className="text-2xl font-bold">Мои оценки</h1>
+          <h1 className="text-2xl font-bold">{t('grades_title')}</h1>
         </div>
 
-        {/* Summary */}
         {grades.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
             className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
             {[
-              { icon: TrendingUp,   label: 'Средний балл', value: overallAvg ?? '—' },
-              { icon: CheckCircle2, label: 'Сдано',        value: passed },
-              { icon: BookOpen,     label: 'Предметов',    value: courses.length },
-              { icon: Star,         label: 'Всего оценок', value: grades.length },
+              { icon: TrendingUp,   label: t('grades_avg'),      value: overallAvg ?? '—', isAvg: true },
+              { icon: CheckCircle2, label: t('grades_passed'),   value: passed,             isAvg: false },
+              { icon: BookOpen,     label: t('grades_subjects'), value: courses.length,     isAvg: false },
+              { icon: Star,         label: t('grades_total'),    value: grades.length,      isAvg: false },
             ].map((s, i) => (
               <Card key={i} className="p-4">
                 <s.icon className="w-4 h-4 text-muted-foreground mb-2" />
-                <div className={`text-2xl font-bold ${typeof s.value === 'number' && s.label === 'Средний балл' ? gradeColor(s.value as number) : ''}`}>
+                <div className={`text-2xl font-bold ${s.isAvg && typeof s.value === 'number' ? gradeColor(s.value as number) : ''}`}>
                   {s.value}
                 </div>
                 <div className="text-xs text-muted-foreground">{s.label}</div>
@@ -111,12 +110,11 @@ export function GradesPage() {
           </motion.div>
         )}
 
-        {/* Tabs by course */}
         {courses.length > 1 && (
           <div className="flex gap-2 flex-wrap mb-6">
             <button onClick={() => setActiveTab('all')}
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'all' ? 'bg-foreground text-background' : 'bg-muted hover:bg-muted/80'}`}>
-              Все
+              {t('grades_all')}
             </button>
             {courses.map(c => (
               <button key={c} onClick={() => setActiveTab(c)}
@@ -130,10 +128,10 @@ export function GradesPage() {
         {grades.length === 0 ? (
           <Card className="p-12 text-center">
             <BarChart3 className="w-10 h-10 mx-auto mb-3 text-muted-foreground/40" />
-            <p className="font-medium mb-1">Оценок пока нет</p>
-            <p className="text-sm text-muted-foreground">Выполняйте задания — здесь появятся оценки</p>
+            <p className="font-medium mb-1">{t('grades_empty')}</p>
+            <p className="text-sm text-muted-foreground">{t('grades_empty_desc')}</p>
             <Link to="/courses" className="inline-block mt-4 text-sm font-medium hover:underline">
-              Перейти к курсам
+              {t('grades_go_courses')}
             </Link>
           </Card>
         ) : (
@@ -145,7 +143,6 @@ export function GradesPage() {
               return (
                 <motion.div key={courseName} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
                   <Card className="p-5">
-                    {/* Course header */}
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2 min-w-0">
                         <BookOpen className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -155,33 +152,29 @@ export function GradesPage() {
                         <div className="flex items-center gap-3 flex-shrink-0">
                           <Badge variant="outline" className="text-xs">{coursePassed}/{courseData.grades.length}</Badge>
                           <span className={`text-lg font-bold ${gradeColor(courseAvg)}`}>{courseAvg}</span>
-                          <span className="text-xs text-muted-foreground">{gradeLabel(courseAvg)}</span>
+                          <span className="text-xs text-muted-foreground">{gradeLbl(courseAvg)}</span>
                         </div>
                       )}
                     </div>
-
-                    {/* Progress */}
                     {courseData.grades.length > 0 && (
                       <div className="mb-4">
                         <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                          <span>Сдано</span>
+                          <span>{t('grades_progress')}</span>
                           <span>{coursePassed}/{courseData.grades.length}</span>
                         </div>
                         <Progress value={Math.round((coursePassed / courseData.grades.length) * 100)} className="h-1.5" />
                       </div>
                     )}
-
-                    {/* Grades table */}
                     <div className="space-y-1.5">
                       {courseData.grades.map(g => (
                         <div key={g.id} className="flex items-center gap-3 py-2 border-b last:border-0">
                           {statusIcon(g)}
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{g.lessonTitle || 'Задание'}</p>
+                            <p className="text-sm font-medium truncate">{g.lessonTitle || t('grades_task')}</p>
                             <div className="flex items-center gap-2 mt-0.5">
-                              {g.checkMode === 'auto' && <Badge variant="outline" className="text-[10px] py-0">Авто</Badge>}
-                              {g.checkMode === 'manual' && <Badge variant="outline" className="text-[10px] py-0">Ручная</Badge>}
-                              {g.source === 'manual' && <Badge variant="secondary" className="text-[10px] py-0">Преподаватель</Badge>}
+                              {g.checkMode === 'auto' && <Badge variant="outline" className="text-[10px] py-0">{t('grades_auto')}</Badge>}
+                              {g.checkMode === 'manual' && <Badge variant="outline" className="text-[10px] py-0">{t('grades_manual')}</Badge>}
+                              {g.source === 'manual' && <Badge variant="secondary" className="text-[10px] py-0">{t('grades_teacher_label')}</Badge>}
                               {g.feedback && <p className="text-xs text-muted-foreground truncate max-w-[180px]">{g.feedback}</p>}
                             </div>
                           </div>

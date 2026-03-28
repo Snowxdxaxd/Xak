@@ -11,6 +11,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from '../components/ui/dialog';
 import { supabase } from '../lib/supabase';
+import { useLanguage } from '../context/LanguageContext';
 import { toast } from 'sonner';
 import {
   Users, Plus, Pencil, Trash2, UserPlus, UserMinus,
@@ -23,6 +24,7 @@ type Tab = 'students' | 'courses';
 
 export function GroupsPage() {
   const { user, userRole, loading } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
 
   const [groups, setGroups] = useState<any[]>([]);
@@ -310,7 +312,7 @@ export function GroupsPage() {
           <div>
             <div className="flex items-center gap-3 mb-1">
               <Users className="w-5 h-5 text-muted-foreground" />
-              <h1 className="text-2xl font-bold">Классы</h1>
+              <h1 className="text-2xl font-bold">{t('groups_title')}</h1>
             </div>
             <p className="text-sm text-muted-foreground">
               Создавайте классы, добавляйте учеников и назначайте индивидуальные курсы

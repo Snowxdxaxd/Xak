@@ -2,42 +2,44 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import {
   GraduationCap, ArrowLeft, User, Mail, Lock, ChevronRight,
-  Loader2, ShieldCheck, RefreshCw,
+  Loader2, ShieldCheck, RefreshCw, Eye, EyeOff,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { api } from '../lib/supabase';
+import { useLanguage } from '../context/LanguageContext';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
-
-const ROLES = [
-  { value: 'student',  label: 'Ученик',        desc: '11–16 лет, изучаю программирование' },
-  { value: 'teacher',  label: 'Преподаватель',  desc: 'Создаю курсы и проверяю задания' },
-  { value: 'parent',   label: 'Родитель',       desc: 'Слежу за прогрессом ребёнка' },
-] as const;
 
 type Step = 'form' | 'verify';
 
 export function Register() {
+  const { t, lang, setLang } = useLanguage();
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>('form');
   const [form, setForm] = useState({ email: '', password: '', name: '', role: 'student' as string });
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
-  // devCode is returned by server when SMTP is not configured (dev mode)
   const [devCode, setDevCode] = useState<string | null>(null);
   const [smtpEnabled, setSmtpEnabled] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const ROLES = [
+    { value: 'student', label: t('reg_role_student'), desc: t('reg_role_student_desc') },
+    { value: 'teacher', label: t('reg_role_teacher'), desc: t('reg_role_teacher_desc') },
+    { value: 'parent',  label: t('reg_role_parent'),  desc: t('reg_role_parent_desc') },
+  ];
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
 
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim()) { toast.error('Введите имя'); return; }
-    if (form.password.length < 6) { toast.error('Пароль минимум 6 символов'); return; }
+    if (!form.name.trim()) { toast.error(t('reg_name_required')); return; }
+    if (form.password.length < 6) { toast.error(t('reg_pass_short')); return; }
     setSendingCode(true);
     try {
       const res = await fetch('/api/auth/send-code', {
@@ -49,20 +51,18 @@ export function Register() {
       if (!res.ok) throw new Error(data.error);
       setStep('verify');
       if (data.devCode) {
-        // SMTP not configured — code shown in dev mode
         setDevCode(data.devCode);
         setSmtpEnabled(false);
-        toast.info(`Режим разработки: код ${data.devCode}`, { duration: 10000 });
+        toast.info(`Dev mode: code ${data.devCode}`, { duration: 10000 });
       } else {
         setSmtpEnabled(true);
         toast.success('Код подтверждения отправлен на почту');
       }
     } catch (err: any) {
-      // If send-code fails (SMTP table not ready etc), try direct signup
       if (err.message?.includes('relation') || err.message?.includes('500')) {
         await doSignup('');
       } else {
-        toast.error(err.message || 'Ошибка отправки кода');
+        toast.error(err.message || t('reg_error'));
       }
     } finally { setSendingCode(false); }
   };
@@ -72,16 +72,16 @@ export function Register() {
     try {
       const result = await api.signUp(form.email, form.password, { name: form.name, role: form.role }, verifyCode);
       if (result.error) throw new Error(result.error);
-      toast.success('Аккаунт создан! Войдите в систему.');
+      toast.success(t('reg_success'));
       navigate('/login');
     } catch (err: any) {
-      toast.error(err.message || 'Ошибка регистрации');
+      toast.error(err.message || t('reg_error'));
     } finally { setLoading(false); }
   };
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (code.length !== 6) { toast.error('Введите 6-значный код'); return; }
+    if (code.length !== 6) { toast.error(t('reg_code_short')); return; }
     await doSignup(code);
   };
 
@@ -97,11 +97,11 @@ export function Register() {
       if (!res.ok) throw new Error(data.error);
       if (data.devCode) {
         setDevCode(data.devCode);
-        toast.info(`Новый код: ${data.devCode}`, { duration: 10000 });
+        toast.info(`${t('reg_dev_code')} ${data.devCode}`, { duration: 10000 });
       } else {
         toast.success('Новый код отправлен');
       }
-    } catch (err: any) { toast.error(err.message || 'Ошибка'); }
+    } catch (err: any) { toast.error(err.message || t('error')); }
     finally { setSendingCode(false); }
   };
 
@@ -112,9 +112,15 @@ export function Register() {
           <GraduationCap className="w-4 h-4" /> CodeKids
         </Link>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}
+            className="px-2 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          >
+            {lang === 'ru' ? 'EN' : 'RU'}
+          </button>
           <ThemeToggle />
           <Link to="/login">
-            <Button variant="ghost" size="sm">Войти</Button>
+            <Button variant="ghost" size="sm">{t('login_btn')}</Button>
           </Link>
         </div>
       </header>
@@ -122,25 +128,19 @@ export function Register() {
       <div className="flex-1 flex items-center justify-center p-4">
         <AnimatePresence mode="wait">
           {step === 'form' ? (
-            <motion.div
-              key="form"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
-              className="w-full max-w-md"
-            >
+            <motion.div key="form" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} className="w-full max-w-md">
               <div className="mb-8">
-                <h1 className="text-3xl font-bold tracking-tight mb-1">Создать аккаунт</h1>
-                <p className="text-muted-foreground">Заполните данные для регистрации</p>
+                <h1 className="text-3xl font-bold tracking-tight mb-1">{t('reg_title')}</h1>
+                <p className="text-muted-foreground">{t('reg_subtitle')}</p>
               </div>
 
               <form onSubmit={handleSendCode} className="space-y-5">
                 <div>
-                  <Label htmlFor="name" className="text-sm font-medium">Имя</Label>
+                  <Label htmlFor="name" className="text-sm font-medium">{t('reg_name')}</Label>
                   <div className="relative mt-1">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input id="name" type="text" value={form.name} onChange={set('name')}
-                      placeholder="Ваше имя" required className="pl-9" />
+                      placeholder={t('reg_name_placeholder')} required className="pl-9" />
                   </div>
                 </div>
 
@@ -154,21 +154,36 @@ export function Register() {
                 </div>
 
                 <div>
-                  <Label htmlFor="password" className="text-sm font-medium">Пароль</Label>
+                  <Label htmlFor="password" className="text-sm font-medium">{t('login_password')}</Label>
                   <div className="relative mt-1">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input id="password" type="password" value={form.password} onChange={set('password')}
-                      placeholder="Минимум 6 символов" required minLength={6} className="pl-9" />
+                    <Input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={set('password')}
+                      placeholder={t('reg_password_placeholder')}
+                      required
+                      minLength={6}
+                      className="pl-9 pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
                 </div>
 
                 <div>
-                  <Label className="text-sm font-medium">Роль</Label>
+                  <Label className="text-sm font-medium">{t('reg_role_label')}</Label>
                   <div className="mt-2 space-y-2">
                     {ROLES.map(r => (
                       <button
-                        key={r.value}
-                        type="button"
+                        key={r.value} type="button"
                         onClick={() => setForm(f => ({ ...f, role: r.value }))}
                         className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors ${
                           form.role === r.value
@@ -190,44 +205,38 @@ export function Register() {
 
                 <Button type="submit" disabled={sendingCode} className="w-full">
                   {sendingCode ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                  Далее — подтвердить email
+                  {t('reg_next_btn')}
                 </Button>
               </form>
 
               <p className="text-center mt-6 text-sm text-muted-foreground">
-                Уже есть аккаунт?{' '}
-                <Link to="/login" className="font-medium text-foreground hover:underline">Войти</Link>
+                {t('reg_have_account')}{' '}
+                <Link to="/login" className="font-medium text-foreground hover:underline">{t('reg_login_link')}</Link>
               </p>
             </motion.div>
           ) : (
-            <motion.div
-              key="verify"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
-              className="w-full max-w-md"
-            >
+            <motion.div key="verify" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} className="w-full max-w-md">
               <button
                 onClick={() => setStep('form')}
                 className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
               >
-                <ArrowLeft className="w-4 h-4" /> Назад
+                <ArrowLeft className="w-4 h-4" /> {t('reg_back')}
               </button>
 
               <div className="mb-8">
                 <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
                   <ShieldCheck className="w-6 h-6 text-muted-foreground" />
                 </div>
-                <h1 className="text-3xl font-bold tracking-tight mb-1">Подтверждение email</h1>
+                <h1 className="text-3xl font-bold tracking-tight mb-1">{t('reg_verify_title')}</h1>
                 {smtpEnabled ? (
                   <p className="text-muted-foreground">
-                    Мы отправили код на <span className="font-medium text-foreground">{form.email}</span>
+                    {t('reg_verify_sent')} <span className="font-medium text-foreground">{form.email}</span>
                   </p>
                 ) : (
                   <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 mt-2">
                     <p className="text-sm text-amber-700 dark:text-amber-400">
-                      Режим разработки — SMTP не настроен.{' '}
-                      {devCode && <><br />Ваш код: <span className="font-bold font-mono text-lg">{devCode}</span></>}
+                      {t('reg_dev_mode')}{' '}
+                      {devCode && <><br />{t('reg_dev_code')} <span className="font-bold font-mono text-lg">{devCode}</span></>}
                     </p>
                   </div>
                 )}
@@ -235,38 +244,27 @@ export function Register() {
 
               <form onSubmit={handleVerify} className="space-y-5">
                 <div>
-                  <Label htmlFor="code" className="text-sm font-medium">Код из письма</Label>
+                  <Label htmlFor="code" className="text-sm font-medium">{t('reg_code_label')}</Label>
                   <Input
-                    id="code"
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]{6}"
-                    maxLength={6}
-                    value={code}
-                    onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
-                    placeholder="000000"
-                    required
-                    className="mt-1 text-center text-2xl font-mono tracking-widest h-14"
-                    autoFocus
+                    id="code" type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6}
+                    value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="000000" required
+                    className="mt-1 text-center text-2xl font-mono tracking-widest h-14" autoFocus
                   />
-                  <p className="text-xs text-muted-foreground mt-1.5">Введите 6-значный код · Действует 15 минут</p>
+                  <p className="text-xs text-muted-foreground mt-1.5">{t('reg_code_hint')}</p>
                 </div>
 
                 <Button type="submit" disabled={loading || code.length !== 6} className="w-full">
                   {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                  Подтвердить и создать аккаунт
+                  {t('reg_verify_btn')}
                 </Button>
 
                 <div className="flex items-center justify-center gap-2 text-sm">
-                  <span className="text-muted-foreground">Не получили код?</span>
-                  <button
-                    type="button"
-                    onClick={handleResend}
-                    disabled={sendingCode}
-                    className="flex items-center gap-1 text-foreground hover:underline"
-                  >
+                  <span className="text-muted-foreground">{t('reg_no_code')}</span>
+                  <button type="button" onClick={handleResend} disabled={sendingCode}
+                    className="flex items-center gap-1 text-foreground hover:underline">
                     {sendingCode ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                    Отправить снова
+                    {t('reg_resend')}
                   </button>
                 </div>
               </form>

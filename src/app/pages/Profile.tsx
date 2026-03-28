@@ -6,11 +6,13 @@ import { Card } from '../components/ui/card';
 import { Progress } from '../components/ui/progress';
 import { Badge } from '../components/ui/badge';
 import { supabase, api } from '../lib/supabase';
+import { useLanguage } from '../context/LanguageContext';
 import { BarChart3, BookOpen, CheckCircle2, Flame, TrendingUp, Award, Trophy, GraduationCap, Star, Crown, Sparkles, Footprints, Medal } from 'lucide-react';
 
 export function Profile() {
   const params = useParams();
   const { user, userRole, loading } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const viewedUserId = params.id;
   const isOwnProfile = !viewedUserId || viewedUserId === user?.id;
@@ -71,7 +73,7 @@ export function Profile() {
   // Group grades by course
   const byCourse: Record<string, any[]> = {};
   for (const g of grades) {
-    const key = g.courseTitle || 'Без курса';
+    const key = g.courseTitle || t('grades_no_course');
     if (!byCourse[key]) byCourse[key] = [];
     byCourse[key].push(g);
   }
@@ -93,7 +95,7 @@ export function Profile() {
             <h1 className="text-2xl font-bold">{displayName}</h1>
             <p className="text-muted-foreground text-sm">{displayEmail}</p>
             <Badge variant="secondary" className="mt-1 text-xs">
-              {profileRole === 'superadmin' ? 'Главный администратор' : isTeacher ? 'Преподаватель' : profileRole === 'parent' ? 'Родитель' : 'Ученик'}
+              {profileRole === 'superadmin' ? t('profile_role_superadmin') : isTeacher ? t('profile_role_teacher') : profileRole === 'parent' ? t('profile_role_parent') : t('profile_role_student')}
             </Badge>
           </div>
         </div>
@@ -103,10 +105,10 @@ export function Profile() {
             {/* Stats cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               {[
-                { icon: BarChart3,    label: 'Уровень',         value: progress.level },
-                { icon: TrendingUp,   label: 'Очки XP',          value: progress.xp },
-                { icon: CheckCircle2, label: 'Уроков пройдено',  value: progress.completedLessons },
-                { icon: Flame,        label: 'Серия дней',       value: progress.streak },
+                { icon: BarChart3,    label: t('profile_level'),   value: progress.level },
+                { icon: TrendingUp,   label: t('profile_xp'),      value: progress.xp },
+                { icon: CheckCircle2, label: t('profile_lessons'), value: progress.completedLessons },
+                { icon: Flame,        label: t('profile_streak'),  value: progress.streak },
               ].map((s, i) => (
                 <Card key={i} className="p-4">
                   <s.icon className="w-4 h-4 text-muted-foreground mb-2" />
@@ -119,7 +121,7 @@ export function Profile() {
             {/* XP progress */}
             <Card className="p-5 mb-6">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">Уровень {progress.level} → {progress.level + 1}</span>
+                <span className="text-sm font-medium">{t('profile_level')} {progress.level} → {progress.level + 1}</span>
                 <span className="text-sm text-muted-foreground">{progress.xp} / {progress.xpToNextLevel} XP</span>
               </div>
               <Progress value={xpPct} className="h-2" />
@@ -128,7 +130,7 @@ export function Profile() {
             {/* Achievements */}
             <Card className="p-5 mb-6">
               <h2 className="font-semibold mb-4 flex items-center gap-2">
-                <Award className="w-4 h-4 text-yellow-500" /> Достижения
+                <Award className="w-4 h-4 text-yellow-500" /> {t('profile_achievements')}
                 {(progress.achievements || []).length > 0 && (
                   <Badge variant="secondary" className="ml-auto text-xs">{(progress.achievements || []).length}</Badge>
                 )}
@@ -136,7 +138,7 @@ export function Profile() {
               {(progress.achievements || []).length === 0 ? (
                 <div className="text-center py-6">
                   <Trophy className="w-10 h-10 mx-auto mb-2 text-muted-foreground/30" />
-                  <p className="text-sm text-muted-foreground">Пока нет достижений. Проходи уроки и курсы!</p>
+                  <p className="text-sm text-muted-foreground">{t('profile_no_achievements')}</p>
                 </div>
               ) : (
                 <div className="grid sm:grid-cols-2 gap-3">
@@ -175,16 +177,16 @@ export function Profile() {
             {myCourses.length > 0 && (
               <Card className="p-5 mb-6">
                 <h2 className="font-semibold mb-4 flex items-center gap-2">
-                  <BookOpen className="w-4 h-4 text-muted-foreground" /> Мои курсы
+                  <BookOpen className="w-4 h-4 text-muted-foreground" /> {t('profile_my_courses')}
                 </h2>
                 {totalLessons > 0 && (
                   <div className="mb-4 pb-4 border-b">
                     <div className="flex justify-between text-sm mb-1.5">
-                      <span className="text-muted-foreground">Общий прогресс</span>
+                      <span className="text-muted-foreground">{t('profile_overall')}</span>
                       <span className="font-medium">{overallPct}%</span>
                     </div>
                     <Progress value={overallPct} className="h-1.5" />
-                    <p className="text-xs text-muted-foreground mt-1">{totalCompleted} из {totalLessons} уроков</p>
+                    <p className="text-xs text-muted-foreground mt-1">{totalCompleted} {t('profile_of')} {totalLessons} {t('profile_lessons_label')}</p>
                   </div>
                 )}
                 <div className="space-y-3">
@@ -209,7 +211,7 @@ export function Profile() {
             {/* Grades by course */}
             {Object.keys(byCourse).length > 0 && (
               <Card className="p-5">
-                <h2 className="font-semibold mb-4">Оценки по курсам</h2>
+                <h2 className="font-semibold mb-4">{t('profile_grades_title')}</h2>
                 <div className="space-y-6">
                   {Object.entries(byCourse).map(([course, courseGrades]) => {
                     const avg = Math.round(courseGrades.reduce((s, g) => s + (g.grade || 0), 0) / courseGrades.length);
@@ -218,27 +220,23 @@ export function Profile() {
                         <div className="flex items-center justify-between mb-2">
                           <h3 className="text-sm font-medium">{course}</h3>
                           <Badge variant={avg >= 60 ? 'default' : 'destructive'} className="text-xs">
-                            Средний балл: {avg}
+                            {t('profile_avg')} {avg}
                           </Badge>
                         </div>
                         <div className="space-y-1.5">
                           {courseGrades.map((g) => (
                             <div key={g.id} className="flex items-center justify-between text-sm py-1.5 border-b last:border-0">
                               <div>
-                                <span className="text-muted-foreground">{g.lessonTitle || 'Урок'}</span>
-                                {g.checkMode === 'auto' && (
-                                  <Badge variant="outline" className="ml-2 text-xs">Авто</Badge>
-                                )}
-                                {g.checkMode === 'manual' && (
-                                  <Badge variant="outline" className="ml-2 text-xs">Ручная</Badge>
-                                )}
+                                <span className="text-muted-foreground">{g.lessonTitle || t('grades_task')}</span>
+                                {g.checkMode === 'auto' && <Badge variant="outline" className="ml-2 text-xs">{t('profile_auto')}</Badge>}
+                                {g.checkMode === 'manual' && <Badge variant="outline" className="ml-2 text-xs">{t('profile_manual')}</Badge>}
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className={`font-semibold ${g.grade >= 60 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                                   {g.grade}
                                 </span>
                                 <Badge variant={g.status === 'passed' ? 'default' : 'destructive'} className="text-xs">
-                                  {g.status === 'passed' ? 'Сдано' : 'Не сдано'}
+                                  {g.status === 'passed' ? t('profile_passed') : t('profile_failed')}
                                 </Badge>
                               </div>
                             </div>
@@ -254,8 +252,8 @@ export function Profile() {
             {grades.length === 0 && myCourses.length === 0 && (
               <Card className="p-10 text-center">
                 <BookOpen className="w-10 h-10 mx-auto mb-3 text-muted-foreground/40" />
-                <p className="font-medium mb-1">Начни обучение</p>
-                <p className="text-sm text-muted-foreground">Пройди первый урок — здесь появится твоя статистика</p>
+                <p className="font-medium mb-1">{t('profile_start_learning')}</p>
+                <p className="text-sm text-muted-foreground">{t('profile_start_desc')}</p>
               </Card>
             )}
           </>
@@ -263,7 +261,7 @@ export function Profile() {
 
         {isTeacher && (
           <Card className="p-6 text-center">
-            <p className="text-muted-foreground">Страница прогресса ориентирована на учеников. Используйте панель преподавателя для управления курсами.</p>
+            <p className="text-muted-foreground">{t('profile_teacher_note')}</p>
           </Card>
         )}
       </div>

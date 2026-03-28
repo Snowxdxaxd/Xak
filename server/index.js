@@ -2,13 +2,21 @@ import 'dotenv/config';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { createReadStream } from 'node:fs';
 import vm from 'node:vm';
 import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { randomUUID } from 'node:crypto';
+import crypto, { randomUUID } from 'node:crypto';
+import multer from 'multer';
 import { query } from './db.js';
+import {
+  classifyMime, getAllAllowedMimes, getMaxSizeForType, detectRealMime,
+  signMediaUrl, verifyMediaSignature,
+  generateImageThumbnail, checkUploadRateLimit, deleteFiles,
+  UPLOAD_PATH, THUMB_PATH, MAX_FILES, QUOTA_BYTES,
+} from './media.js';
 
 const app = express();
 const PORT = Number(process.env.API_PORT || 4000);
@@ -21,8 +29,18 @@ const SMTP_USER = process.env.SMTP_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || '';
 const SMTP_FROM = process.env.SMTP_FROM || 'noreply@codekids.local';
 
+// ─── Multer (file uploads) ───────────────────────────────────────────────────
+const mediaStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_PATH),
+  filename:    (_req, file, cb) => cb(null, randomUUID() + path.extname(file.originalname).toLowerCase()),
+});
+const upload = multer({
+  storage: mediaStorage,
+  limits: { fileSize: 200 * 1024 * 1024, files: MAX_FILES },
+});
+
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 // Health check — used by Docker HEALTHCHECK and load balancers
 app.get('/healthz', (_req, res) => res.json({ ok: true, ts: Date.now() }));
@@ -317,6 +335,31 @@ async function ensureSchemaCompat() {
       assigned_at timestamptz not null default now(),
       primary key (group_id, course_id)
     )`,
+    // media_files: chat attachments (images, video, audio, docs)
+    `create table if not exists media_files (
+      id uuid primary key default gen_random_uuid(),
+      message_id text references messages(id) on delete cascade,
+      user_id uuid references app_users(id) on delete set null,
+      group_id text not null,
+      original_name text not null,
+      stored_name text not null,
+      mime_type text not null,
+      media_type text not null,
+      file_size bigint not null,
+      thumbnail_name text,
+      width int,
+      height int,
+      created_at timestamptz not null default now()
+    )`,
+    `create index if not exists idx_media_message on media_files(message_id)`,
+    `create index if not exists idx_media_user    on media_files(user_id)`,
+    // banned_emails: block re-registration after account deletion
+    `create table if not exists banned_emails (
+      email text primary key,
+      banned_by uuid references app_users(id) on delete set null,
+      banned_at timestamptz not null default now(),
+      reason text
+    )`,
   ];
   for (const stmt of stmts) {
     try { await query(stmt); } catch (err) { console.error('[schema-compat]', err.message); }
@@ -337,6 +380,8 @@ app.post('/auth/send-code', async (req, res) => {
     if (!email) return res.status(400).json({ error: 'Email обязателен' });
     const exists = await query('select id from app_users where email=$1', [email]);
     if (exists.rowCount) return res.status(400).json({ error: 'Пользователь уже существует' });
+    const banned = await query('select 1 from banned_emails where email=$1', [email]);
+    if (banned.rowCount) return res.status(403).json({ error: 'Регистрация с этим email запрещена администратором' });
     // Remove old codes for this email
     await query('delete from email_verifications where email=$1', [email]);
     const code = String(Math.floor(100000 + Math.random() * 900000));
@@ -369,6 +414,8 @@ app.post('/auth/signup', async (req, res) => {
     if (!email || !password) return res.status(400).json({ error: 'Email и пароль обязательны' });
     const exists = await query('select id from app_users where email=$1', [email]);
     if (exists.rowCount) return res.status(400).json({ error: 'Пользователь уже существует' });
+    const banned2 = await query('select 1 from banned_emails where email=$1', [email]);
+    if (banned2.rowCount) return res.status(403).json({ error: 'Регистрация с этим email запрещена администратором' });
 
     let emailVerified = false;
     // If code is provided, verify it
@@ -452,6 +499,163 @@ app.post('/auth/change-email', authRequired, async (req, res) => {
   } catch (err) {
     console.error('[change-email]', err);
     return res.status(500).json({ error: 'Ошибка смены email' });
+  }
+});
+
+// ─── update own display name ─────────────────────────────────────────────────
+app.put('/auth/update-name', authRequired, async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'Имя не может быть пустым' });
+    const { rows } = await query('select user_metadata from app_users where id=$1', [req.user.sub]);
+    if (!rows.length) return res.status(404).json({ error: 'Пользователь не найден' });
+    const meta = { ...(rows[0].user_metadata || {}), name: name.trim() };
+    await query('update app_users set user_metadata=$1 where id=$2', [JSON.stringify(meta), req.user.sub]);
+    const { rows: updated } = await query('select id,email,user_metadata from app_users where id=$1', [req.user.sub]);
+    const safeUser = mapUser(updated[0]);
+    return res.json({ token: issueToken(safeUser), user: safeUser });
+  } catch (err) {
+    console.error('[update-name]', err);
+    return res.status(500).json({ error: 'Ошибка смены имени' });
+  }
+});
+
+// ─── admin: update another user's name ───────────────────────────────────────
+app.put('/admin/users/:id/name', authRequired, async (req, res) => {
+  try {
+    if (!isSuperAdmin(req)) return res.status(403).json({ error: 'Только главный администратор' });
+    const { name } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'Имя не может быть пустым' });
+    const { rows } = await query('select user_metadata from app_users where id=$1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Пользователь не найден' });
+    const meta = { ...(rows[0].user_metadata || {}), name: name.trim() };
+    await query('update app_users set user_metadata=$1 where id=$2', [JSON.stringify(meta), req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[admin/update-name]', err);
+    return res.status(500).json({ error: 'Ошибка' });
+  }
+});
+
+// ─── admin: list all users ────────────────────────────────────────────────────
+app.get('/admin/users', authRequired, async (req, res) => {
+  try {
+    if (!isSuperAdmin(req)) return res.status(403).json({ error: 'Только главный администратор' });
+    const { rows } = await query(
+      `select id, email, user_metadata, email_verified, created_at as "createdAt"
+       from app_users order by created_at desc`
+    );
+    res.json({ users: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
+});
+
+// ─── admin: delete account (with optional email ban) ─────────────────────────
+app.delete('/admin/users/:id', authRequired, async (req, res) => {
+  try {
+    if (!isSuperAdmin(req)) return res.status(403).json({ error: 'Только главный администратор' });
+    if (req.params.id === req.user.sub) return res.status(400).json({ error: 'Нельзя удалить собственный аккаунт' });
+    const { rows, rowCount } = await query('select email from app_users where id=$1', [req.params.id]);
+    if (!rowCount) return res.status(404).json({ error: 'Пользователь не найден' });
+    const email = rows[0].email;
+    const banEmail = req.query.ban === 'true';
+    if (banEmail) {
+      await query(
+        'insert into banned_emails(email,banned_by) values($1,$2) on conflict(email) do update set banned_by=$2, banned_at=now()',
+        [email, req.user.sub]
+      );
+    }
+    await query('delete from app_users where id=$1', [req.params.id]);
+    res.json({ ok: true, email, banned: banEmail });
+  } catch (err) {
+    console.error('[admin/delete-user]', err);
+    res.status(500).json({ error: 'Ошибка удаления аккаунта' });
+  }
+});
+
+// ─── admin: list banned emails ────────────────────────────────────────────────
+app.get('/admin/banned-emails', authRequired, async (req, res) => {
+  try {
+    if (!isSuperAdmin(req)) return res.status(403).json({ error: 'Только главный администратор' });
+    const { rows } = await query(`select email, banned_at as "bannedAt" from banned_emails order by banned_at desc`);
+    res.json({ bannedEmails: rows });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
+});
+
+// ─── admin: unban email ───────────────────────────────────────────────────────
+app.delete('/admin/banned-emails/:email', authRequired, async (req, res) => {
+  try {
+    if (!isSuperAdmin(req)) return res.status(403).json({ error: 'Только главный администратор' });
+    await query('delete from banned_emails where email=$1', [decodeURIComponent(req.params.email)]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
+});
+
+// ─── course recommendations ───────────────────────────────────────────────────
+app.get('/courses/:id/recommendations', async (req, res) => {
+  try {
+    const { data: { session } } = await (async () => ({ data: { session: null } }))();
+    // Auth is optional for recommendations – just try to get user
+    let userId = null;
+    try {
+      const header = req.header('Authorization');
+      if (header) {
+        const decoded = jwt.verify(header.replace('Bearer ', '').trim(), JWT_SECRET);
+        userId = decoded.sub;
+      }
+    } catch {}
+
+    // Get the base course
+    const { rows: [base], rowCount } = await query(
+      'select id, title, description, level from courses where id=$1', [req.params.id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'Курс не найден' });
+
+    // Get lessons of base course to check completion
+    const { rows: lessons } = await query(
+      'select id from lessons where course_id=$1', [req.params.id]
+    );
+    const totalLessons = lessons.length;
+    let completedCount = 0;
+
+    if (userId && totalLessons > 0) {
+      const lessonIds = lessons.map(l => l.id);
+      const { rows: done } = await query(
+        'select lesson_id from lesson_completions where user_id=$1 and lesson_id = any($2)',
+        [userId, lessonIds]
+      );
+      completedCount = done.length;
+    }
+
+    // Only give recommendations if course is completed (or no auth – always show)
+    const courseComplete = !userId || totalLessons === 0 || completedCount >= totalLessons;
+
+    // Find similar courses by level and keyword overlap, excluding the current one
+    const words = (base.title + ' ' + (base.description || ''))
+      .toLowerCase().split(/\s+/).filter(w => w.length > 3)
+      .slice(0, 8);
+
+    const { rows: allCourses } = await query(
+      `select c.id, c.title, c.description, c.level,
+              c.lessons_count as "lessonsCount"
+       from courses c
+       where c.id != $1 and c.is_private = false
+       order by c.created_at desc limit 50`,
+      [req.params.id]
+    );
+
+    // Score each candidate course
+    const scored = allCourses.map(c => {
+      let score = 0;
+      if (c.level === base.level) score += 3;
+      const text = (c.title + ' ' + (c.description || '')).toLowerCase();
+      for (const w of words) if (text.includes(w)) score += 1;
+      return { ...c, _score: score };
+    }).sort((a, b) => b._score - a._score).slice(0, 4);
+
+    res.json({ recommendations: scored, courseComplete, completedCount, totalLessons });
+  } catch (err) {
+    console.error('[recommendations]', err);
+    res.status(500).json({ error: 'Ошибка получения рекомендаций' });
   }
 });
 
@@ -1210,6 +1414,37 @@ app.post('/comments', authRequired, async (req, res) => {
 
 // ─── messages ─────────────────────────────────────────────────────────────────
 
+// Helper: attach signed media URLs to a list of messages
+async function attachMediaToMessages(messages) {
+  if (!messages.length) return messages;
+  const ids = messages.map(m => m.id);
+  const { rows: mediaRows } = await query(
+    `select id, message_id, original_name, mime_type, media_type,
+            file_size::int as "fileSize", thumbnail_name, width, height
+     from media_files where message_id = any($1)`,
+    [ids]
+  );
+  const byMsg = {};
+  for (const mf of mediaRows) {
+    const { sig, expires } = signMediaUrl(mf.id, JWT_SECRET);
+    const entry = {
+      id: mf.id,
+      originalName: mf.original_name,
+      mimeType: mf.mime_type,
+      mediaType: mf.media_type,
+      fileSize: mf.fileSize,
+      width: mf.width,
+      height: mf.height,
+      downloadUrl: `/api/media/${mf.id}/download?sig=${sig}&exp=${expires}`,
+      thumbnailUrl: mf.thumbnail_name
+        ? `/api/media/${mf.id}/thumbnail?sig=${sig}&exp=${expires}`
+        : null,
+    };
+    (byMsg[mf.message_id] ||= []).push(entry);
+  }
+  return messages.map(m => ({ ...m, media: byMsg[m.id] || [] }));
+}
+
 app.get('/messages/:groupId', authRequired, async (req, res) => {
   try {
     const access = await canAccessGroup(req.params.groupId, req);
@@ -1220,27 +1455,95 @@ app.get('/messages/:groupId', authRequired, async (req, res) => {
        from messages where group_id=$1 order by created_at asc`,
       [req.params.groupId]
     );
-    res.json({ messages: rows });
+    const withMedia = await attachMediaToMessages(rows);
+    res.json({ messages: withMedia });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка загрузки сообщений' }); }
 });
 
-app.post('/messages', authRequired, async (req, res) => {
+app.post('/messages', authRequired, upload.array('files', MAX_FILES), async (req, res) => {
+  const savedFiles = []; // track for cleanup on error
   try {
-    const { groupId, text } = req.body;
-    if (!groupId || !text) return res.status(400).json({ error: 'groupId и text обязательны' });
+    const groupId = req.body.groupId;
+    const text    = req.body.text || '';
+    const files   = req.files || [];
+
+    if (!groupId)                          return res.status(400).json({ error: 'groupId обязателен' });
+    if (!text.trim() && files.length === 0) return res.status(400).json({ error: 'Текст или файлы обязательны' });
+
     const access = await canAccessGroup(groupId, req);
     if (!access) return res.status(403).json({ error: 'Нет доступа к этому чату' });
+
+    // Rate limit
+    if (files.length > 0 && !checkUploadRateLimit(req.user.sub)) {
+      for (const f of files) await deleteFiles(f.filename);
+      return res.status(429).json({ error: 'Превышен лимит загрузок (30/час)' });
+    }
+
+    // User quota check
+    if (files.length > 0) {
+      const { rows: [q] } = await query(
+        'select coalesce(sum(file_size),0)::bigint as used from media_files where user_id=$1',
+        [req.user.sub]
+      );
+      const incoming = files.reduce((s, f) => s + f.size, 0);
+      if (Number(q.used) + incoming > QUOTA_BYTES) {
+        for (const f of files) await deleteFiles(f.filename);
+        return res.status(413).json({ error: 'Квота хранилища исчерпана (1 GB)' });
+      }
+    }
+
+    // Validate each file: real MIME + size per type
+    for (const f of files) {
+      const realMime  = await detectRealMime(f.path, f.mimetype);
+      const mediaType = classifyMime(realMime);
+      if (!mediaType) {
+        for (const ff of files) await deleteFiles(ff.filename);
+        return res.status(400).json({ error: `Тип файла не поддерживается: ${f.originalname}` });
+      }
+      if (f.size > getMaxSizeForType(mediaType)) {
+        for (const ff of files) await deleteFiles(ff.filename);
+        return res.status(400).json({ error: `Файл слишком большой: ${f.originalname}` });
+      }
+      f._realMime  = realMime;
+      f._mediaType = mediaType;
+    }
+
+    // Create message
     const id = randomUUID();
     const userName = req.user?.user_metadata?.name || 'Аноним';
-    await query('insert into messages(id,group_id,user_id,user_name,text) values($1,$2,$3,$4,$5)',
-      [id, groupId, req.user.sub, userName, text]);
-    const { rows } = await query(
-      `select id,group_id as "groupId",user_id as "userId",user_name as "userName",
-        text,created_at as "createdAt", edited_at as "editedAt"
-       from messages where id=$1`, [id]
+    await query(
+      'insert into messages(id,group_id,user_id,user_name,text) values($1,$2,$3,$4,$5)',
+      [id, groupId, req.user.sub, userName, text || '']
     );
-    res.json({ message: rows[0] });
-  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка отправки сообщения' }); }
+
+    // Process & insert media records
+    for (const f of files) {
+      let thumbName = null, width = null, height = null;
+      if (f._mediaType === 'image' && f._realMime !== 'image/svg+xml') {
+        const t = await generateImageThumbnail(f.filename);
+        thumbName = t.thumbName; width = t.width; height = t.height;
+      }
+      await query(
+        `insert into media_files(message_id,user_id,group_id,original_name,stored_name,
+          mime_type,media_type,file_size,thumbnail_name,width,height)
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [id, req.user.sub, groupId, f.originalname, f.filename,
+         f._realMime, f._mediaType, f.size, thumbName, width, height]
+      );
+    }
+
+    // Return full message with media
+    const { rows: mr } = await query(
+      `select id,group_id as "groupId",user_id as "userId",user_name as "userName",
+        text,created_at as "createdAt", edited_at as "editedAt" from messages where id=$1`, [id]
+    );
+    const withMedia = await attachMediaToMessages(mr);
+    res.json({ message: withMedia[0] });
+  } catch (err) {
+    console.error('[messages/post]', err);
+    for (const f of (req.files || [])) await deleteFiles(f.filename).catch(() => {});
+    res.status(500).json({ error: 'Ошибка отправки сообщения' });
+  }
 });
 
 app.put('/messages/:id', authRequired, async (req, res) => {
@@ -1258,7 +1561,8 @@ app.put('/messages/:id', authRequired, async (req, res) => {
         text,created_at as "createdAt", edited_at as "editedAt" from messages where id=$1`,
       [req.params.id]
     );
-    res.json({ message: mr[0] });
+    const withMedia = await attachMediaToMessages(mr);
+    res.json({ message: withMedia[0] });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка редактирования сообщения' }); }
 });
 
@@ -1269,9 +1573,77 @@ app.delete('/messages/:id', authRequired, async (req, res) => {
     if (!isSuperAdmin(req) && rows[0].user_id !== req.user.sub) {
       return res.status(403).json({ error: 'Недостаточно прав' });
     }
+    // Delete media files from disk before DB cascade removes records
+    const { rows: mediaRows } = await query(
+      'select stored_name, thumbnail_name from media_files where message_id=$1',
+      [req.params.id]
+    );
+    for (const mf of mediaRows) await deleteFiles(mf.stored_name, mf.thumbnail_name);
     await query('delete from messages where id=$1', [req.params.id]);
     res.json({ ok: true });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка удаления сообщения' }); }
+});
+
+// ─── media endpoints ─────────────────────────────────────────────────────────
+
+app.get('/media/:id/download', async (req, res) => {
+  try {
+    const { sig, exp } = req.query;
+    if (!sig || !exp || !verifyMediaSignature(req.params.id, sig, exp, JWT_SECRET)) {
+      return res.status(403).json({ error: 'Ссылка недействительна или истекла' });
+    }
+    const { rows, rowCount } = await query(
+      'select stored_name, original_name, mime_type from media_files where id=$1',
+      [req.params.id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'Файл не найден' });
+    const filePath = path.join(UPLOAD_PATH, rows[0].stored_name);
+    res.setHeader('Content-Type', rows[0].mime_type);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(rows[0].original_name)}"`);
+    createReadStream(filePath).pipe(res);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка скачивания' }); }
+});
+
+app.get('/media/:id/thumbnail', async (req, res) => {
+  try {
+    const { sig, exp } = req.query;
+    if (!sig || !exp || !verifyMediaSignature(req.params.id, sig, exp, JWT_SECRET)) {
+      return res.status(403).json({ error: 'Ссылка недействительна или истекла' });
+    }
+    const { rows, rowCount } = await query(
+      'select thumbnail_name from media_files where id=$1', [req.params.id]
+    );
+    if (!rowCount || !rows[0].thumbnail_name) return res.status(404).json({ error: 'Превью не найдено' });
+    const filePath = path.join(THUMB_PATH, rows[0].thumbnail_name);
+    res.setHeader('Content-Type', 'image/webp');
+    createReadStream(filePath).pipe(res);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
+});
+
+app.delete('/media/:id', authRequired, async (req, res) => {
+  try {
+    const { rows, rowCount } = await query(
+      'select user_id, stored_name, thumbnail_name from media_files where id=$1',
+      [req.params.id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'Файл не найден' });
+    if (!isSuperAdmin(req) && rows[0].user_id !== req.user.sub) {
+      return res.status(403).json({ error: 'Недостаточно прав' });
+    }
+    await deleteFiles(rows[0].stored_name, rows[0].thumbnail_name);
+    await query('delete from media_files where id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка удаления файла' }); }
+});
+
+app.get('/media/quota', authRequired, async (req, res) => {
+  try {
+    const { rows: [q] } = await query(
+      'select coalesce(sum(file_size),0)::bigint as used from media_files where user_id=$1',
+      [req.user.sub]
+    );
+    res.json({ usedBytes: Number(q.used), quotaBytes: QUOTA_BYTES });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Ошибка' }); }
 });
 
 // ─── progress ─────────────────────────────────────────────────────────────────

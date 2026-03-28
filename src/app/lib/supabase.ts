@@ -209,6 +209,42 @@ export const api = {
     });
   },
 
+  async sendMessageWithMedia(
+    groupId: string,
+    text: string,
+    files: File[],
+    token: string,
+    onProgress?: (pct: number) => void,
+  ): Promise<any> {
+    const formData = new FormData();
+    formData.append('groupId', groupId);
+    formData.append('text', text);
+    files.forEach(f => formData.append('files', f));
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/messages`);
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) {
+          onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+
+      xhr.onload = () => {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+          else reject(new Error(data.error || 'Ошибка загрузки'));
+        } catch { reject(new Error('Некорректный ответ сервера')); }
+      };
+
+      xhr.onerror = () => reject(new Error('Ошибка сети'));
+      xhr.send(formData);
+    });
+  },
+
   async editMessage(messageId: string, text: string, token: string) {
     return request(`/messages/${messageId}`, {
       method: 'PUT',
@@ -222,6 +258,14 @@ export const api = {
       method: 'DELETE',
       token,
     });
+  },
+
+  async deleteMedia(mediaId: string, token: string) {
+    return request(`/media/${mediaId}`, { method: 'DELETE', token });
+  },
+
+  async getMediaQuota(token: string) {
+    return request('/media/quota', { token });
   },
 
   // User Progress

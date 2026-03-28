@@ -50,6 +50,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-noreply@codekids.local}
+    volumes:
+      - uploads_data:/app/uploads
     ports:
       - "4000:4000"
     healthcheck:
@@ -68,3 +70,5 @@ volumes:
   postgres_data:
     # Named volume — data persists between `docker compose down` restarts.
     # Use `docker compose down -v` to fully wipe the database.
+  uploads_data:
+    # Uploaded media files (images, video, audio, documents)
