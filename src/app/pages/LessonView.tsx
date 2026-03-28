@@ -4,7 +4,7 @@ import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import {
   ArrowLeft, Star, Send, CheckCircle2, BookOpen,
-  ClipboardList, HelpCircle, Plus, Trash2, Loader2,
+  ClipboardList, HelpCircle, Plus, Trash2, Loader2, Volume2,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -17,6 +17,7 @@ import { api, supabase } from '../lib/supabase';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { AvatarPlayer } from '../components/AvatarPlayer';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 export function LessonView() {
@@ -39,6 +40,7 @@ export function LessonView() {
   const [quizResult, setQuizResult] = useState<any>(null);
   const [quizSubmitting, setQuizSubmitting] = useState(false);
   const [showQuiz, setShowQuiz] = useState(false);
+  const [lessonMode, setLessonMode] = useState<'text' | 'avatar'>('text');
 
   // Teacher: add quiz question
   const [newQ, setNewQ] = useState({ question: '', type: 'single', options: ['', '', '', ''], correctAnswer: '', points: 10 });
@@ -174,30 +176,60 @@ export function LessonView() {
           {completed && <Badge className="flex items-center gap-1.5 flex-shrink-0 mt-1"><CheckCircle2 className="w-3.5 h-3.5" /> Пройден</Badge>}
         </div>
 
+        {/* Learning mode toggle */}
+        <div className="flex items-center gap-1 p-1 bg-muted rounded-full mb-6 w-fit">
+          <button
+            onClick={() => setLessonMode('text')}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
+              lessonMode === 'text'
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5" /> Текст
+          </button>
+          <button
+            onClick={() => setLessonMode('avatar')}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
+              lessonMode === 'avatar'
+                ? 'bg-gradient-to-r from-purple-600 to-fuchsia-500 text-white shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Volume2 className="w-3.5 h-3.5" /> Озвучка с Кирой ✦
+          </button>
+        </div>
+
         {/* Content */}
         <Card className="p-8 mb-6">
-          <div className="flex items-center gap-2 mb-5">
-            <BookOpen className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm font-medium text-muted-foreground">Материал урока</span>
-          </div>
-          <div className="prose prose-sm dark:prose-invert max-w-none">
-            <ReactMarkdown
-              components={{
-                code({ node, inline, className, children, ...props }: any) {
-                  const match = /language-(\w+)/.exec(className || '');
-                  return !inline && match ? (
-                    <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" {...props}>
-                      {String(children).replace(/\n$/, '')}
-                    </SyntaxHighlighter>
-                  ) : (
-                    <code className={className} {...props}>{children}</code>
-                  );
-                },
-              }}
-            >
-              {lesson.content || '*Содержимое урока не добавлено*'}
-            </ReactMarkdown>
-          </div>
+          {lessonMode === 'text' ? (
+            <>
+              <div className="flex items-center gap-2 mb-5">
+                <BookOpen className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-medium text-muted-foreground">Материал урока</span>
+              </div>
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown
+                  components={{
+                    code({ node, inline, className, children, ...props }: any) {
+                      const match = /language-(\w+)/.exec(className || '');
+                      return !inline && match ? (
+                        <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" {...props}>
+                          {String(children).replace(/\n$/, '')}
+                        </SyntaxHighlighter>
+                      ) : (
+                        <code className={className} {...props}>{children}</code>
+                      );
+                    },
+                  }}
+                >
+                  {lesson.content || '*Содержимое урока не добавлено*'}
+                </ReactMarkdown>
+              </div>
+            </>
+          ) : (
+            <AvatarPlayer content={lesson.content || ''} lessonTitle={lesson.title} />
+          )}
         </Card>
 
         {/* Quiz section */}
