@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CodeKids — презентация проекта</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --background: #ffffff;
+      --foreground: #1a1a1a;
+      --card: #ffffff;
+      --muted: #ececf0;
+      --muted-foreground: #717182;
+      --primary: #030213;
+      --primary-foreground: #ffffff;
+      --accent: #e9ebef;
+      --border: rgba(0, 0, 0, 0.1);
+      --radius: 0.625rem;
+      --radius-xl: calc(var(--radius) + 4px);
+      --blue: #3b82f6;
+      --green: #22c55e;
+      --purple: #a855f7;
+      --orange: #f97316;
+      --cyan: #06b6d4;
+    }
+
+    [data-theme="dark"] {
+      --background: #1c1c1e;
+      --foreground: #fafafa;
+      --card: #252528;
+      --muted: #2e2e32;
+      --muted-foreground: #a1a1aa;
+      --primary: #fafafa;
+      --primary-foreground: #18181b;
+      --accent: #2e2e32;
+      --border: rgba(255, 255, 255, 0.12);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 16px;
+      background: var(--background);
+      color: var(--foreground);
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    .deck {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      flex-shrink: 0;
+      height: 56px;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--background) 95%, transparent);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.5rem;
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+
+    .brand svg { width: 20px; height: 20px; }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--background);
+      color: var(--muted-foreground);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn:hover {
+      background: var(--accent);
+      color: var(--foreground);
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: var(--primary-foreground);
+      border-color: transparent;
+    }
+    .btn-primary:hover {
+      opacity: 0.92;
+      color: var(--primary-foreground);
+    }
+
+    .slide-viewport {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .slides-track {
+      display: flex;
+      height: 100%;
+      transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .slide {
+      flex: 0 0 100%;
+      width: 100%;
+      height: 100%;
+      padding: 2.5rem 3rem 5rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      position: relative;
+    }
+
+    .slide::before {
+      content: '';
+      position: absolute;
+      top: 30%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(600px, 80vw);
+      height: 400px;
+      background: color-mix(in srgb, var(--primary) 5%, transparent);
+      border-radius: 50%;
+      filter: blur(64px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .slide-inner {
+      position: relative;
+      z-index: 1;
+      max-width: 960px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.35rem 1rem;
+      border-radius: 9999px;
+      border: 1px solid var(--border);
+      font-size: 0.8125rem;
+      color: var(--muted-foreground);
+      background: var(--background);
+      margin-bottom: 1.5rem;
+    }
+
+    h1 {
+      font-size: clamp(2.25rem, 5vw, 3.5rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.05;
+      margin-bottom: 1rem;
+    }
+
+    h1 .muted {
+      display: block;
+      font-weight: 400;
+      color: var(--muted-foreground);
+      font-size: 0.55em;
+      margin-top: 0.35rem;
+    }
+
+    h2 {
+      font-size: clamp(1.75rem, 3vw, 2.25rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+
+    .lead {
+      font-size: 1.125rem;
+      color: var(--muted-foreground);
+      line-height: 1.6;
+      max-width: 36rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem;
+      margin-top: 1.25rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-top: 1.25rem;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 1.25rem 1.35rem;
+      background: var(--card);
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .card:hover {
+      box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+      transform: translateY(-2px);
+    }
+    [data-theme="dark"] .card:hover {
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    }
+
+    .card h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+
+    .card p, .card li {
+      font-size: 0.8125rem;
+      color: var(--muted-foreground);
+      line-height: 1.55;
+    }
+
+    .icon-dot {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 0.75rem;
+      font-size: 1.1rem;
+    }
+
+    ul.list { list-style: none; margin-top: 0.75rem; }
+    ul.list li {
+      padding: 0.35rem 0;
+      padding-left: 1.25rem;
+      position: relative;
+      font-size: 0.9375rem;
+      color: var(--muted-foreground);
+      line-height: 1.5;
+    }
+    ul.list li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0.65em;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--primary);
+      opacity: 0.5;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 0.2rem 0.55rem;
+      border-radius: 9999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      margin: 0.15rem 0.15rem 0 0;
+      border: 1px solid var(--border);
+    }
+    .tag-blue { background: rgba(59, 130, 246, 0.1); color: var(--blue); border-color: rgba(59, 130, 246, 0.2); }
+    .tag-green { background: rgba(34, 197, 94, 0.1); color: var(--green); border-color: rgba(34, 197, 94, 0.2); }
+    .tag-purple { background: rgba(168, 85, 247, 0.1); color: var(--purple); border-color: rgba(168, 85, 247, 0.2); }
+    .tag-orange { background: rgba(249, 115, 22, 0.1); color: var(--orange); border-color: rgba(249, 115, 22, 0.2); }
+    .tag-cyan { background: rgba(6, 182, 212, 0.1); color: var(--cyan); border-color: rgba(6, 182, 212, 0.2); }
+
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+      margin-top: 1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+    }
+    .compare-table th, .compare-table td {
+      padding: 0.65rem 0.85rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .compare-table th { background: var(--muted); font-weight: 600; font-size: 0.75rem; }
+    .compare-table tr:last-child td { border-bottom: none; }
+    .check { color: var(--green); font-weight: 600; }
+    .partial { color: var(--orange); }
+
+    .footer-hint {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 0.75rem 1.5rem;
+      border-top: 1px solid var(--border);
+      background: var(--background);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--muted-foreground);
+      z-index: 20;
+    }
+
+    .dots {
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 50%;
+    }
+    .dots button {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      border: none;
+      background: var(--border);
+      cursor: pointer;
+      padding: 0;
+      transition: transform 0.15s, background 0.15s;
+    }
+    .dots button.active {
+      background: var(--primary);
+      transform: scale(1.15);
+    }
+
+    .nav-zones {
+      position: fixed;
+      top: 56px;
+      bottom: 48px;
+      left: 0;
+      right: 0;
+      display: flex;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .nav-zones button {
+      pointer-events: auto;
+      flex: 1;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    @media (max-width: 640px) {
+      .slide { padding: 1.5rem 1.25rem 4.5rem; }
+      .topbar { padding: 0 1rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <header class="topbar">
+      <div class="brand">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+        CodeKids
+      </div>
+      <div class="controls">
+        <span style="font-size:0.75rem;color:var(--muted-foreground)"><span id="cur">1</span> / <span id="total">13</span></span>
+        <button type="button" class="btn" id="themeBtn" aria-label="Тема">Тема</button>
+        <button type="button" class="btn btn-primary" id="prevBtn">Назад</button>
+        <button type="button" class="btn btn-primary" id="nextBtn">Далее</button>
+      </div>
+    </header>
+
+    <div class="slide-viewport">
+      <div class="slides-track" id="track">
+        <!-- 1 -->
+        <section class="slide" data-slide="1">
+          <div class="slide-inner">
+            <div class="badge">Образовательная IT-платформа</div>
+            <h1>CodeKids<span class="muted">Программирование для школьников в одной среде</span></h1>
+            <p class="lead">Курсы, классы, онлайн-компилятор, видеоуроки, чат и геймификация — единое веб-приложение с Docker-развёртыванием.</p>
+          </div>
+        </section>
+
+        <!-- 2 -->
+        <section class="slide" data-slide="2">
+          <div class="slide-inner">
+            <h2>Задача проекта</h2>
+            <p class="lead">Объединить материалы, практику кода, коммуникацию учителя и ученика и контроль прогресса без набора разрозненных сервисов.</p>
+            <ul class="list">
+              <li>Снизить порог входа для преподавателя и ученика</li>
+              <li>Дать безопасную среду для запуска Python и JavaScript в браузере</li>
+              <li>Поддержать очный и дистанционный формат (видеозвонки Jitsi)</li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- 3 -->
+        <section class="slide" data-slide="3">
+          <div class="slide-inner">
+            <h2>Что такое CodeKids</h2>
+            <p class="lead">Полнофункциональная LMS с акцентом на программирование: не только контент, но и выполнение кода, задания с проверкой и социальные функции.</p>
+            <div class="grid-2">
+              <div class="card">
+                <div class="icon-dot" style="background:rgba(59,130,246,0.1);color:var(--blue)">📚</div>
+                <h3>Обучение</h3>
+                <p>Публичные и закрытые курсы, уроки, привязка к классам.</p>
+              </div>
+              <div class="card">
+                <div class="icon-dot" style="background:rgba(34,197,94,0.1);color:var(--green)">⚡</div>
+                <h3>Практика</h3>
+                <p>Компилятор в браузере, отправка решений, оценки.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4 -->
+        <section class="slide" data-slide="4">
+          <div class="slide-inner">
+            <h2>Роли и аудитория</h2>
+            <div class="grid-2">
+              <div class="card">
+                <h3>Суперадминистратор</h3>
+                <p>Управление пользователями, системные функции, экспорт БД.</p>
+              </div>
+              <div class="card">
+                <h3>Преподаватель</h3>
+                <p>Курсы, классы, индивидуальные программы, дашборд, онлайн-уроки.</p>
+              </div>
+              <div class="card">
+                <h3>Ученик</h3>
+                <p>Прохождение курсов, компилятор, рейтинг, достижения, видео.</p>
+              </div>
+              <div class="card">
+                <h3>Родитель</h3>
+                <p>Просмотр прогресса привязанных детей.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5 -->
+        <section class="slide" data-slide="5">
+          <div class="slide-inner">
+            <h2>Ключевой функционал</h2>
+            <div class="grid-3">
+              <div class="card"><h3>Курсы и классы</h3><p>Публичные курсы и курсы только для класса.</p></div>
+              <div class="card"><h3>Видеозвонки</h3><p>Jitsi Meet в браузере для онлайн-уроков.</p></div>
+              <div class="card"><h3>Компилятор</h3><p>Python и JavaScript без установки IDE.</p></div>
+              <div class="card"><h3>Задания</h3><p>Ручная и автоматическая проверка.</p></div>
+              <div class="card"><h3>Мессенджер</h3><p>Общение между участниками.</p></div>
+              <div class="card"><h3>Геймификация</h3><p>XP, уровни, серии, таблица лидеров.</p></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6 -->
+        <section class="slide" data-slide="6">
+          <div class="slide-inner">
+            <h2>Стек: клиент</h2>
+            <p class="lead">Современный SPA с дизайн-системой в духе shadcn/ui.</p>
+            <p>
+              <span class="tag tag-blue">React 19</span>
+              <span class="tag tag-green">Vite</span>
+              <span class="tag tag-purple">TypeScript</span>
+              <span class="tag tag-orange">Tailwind CSS</span>
+              <span class="tag tag-cyan">Radix UI</span>
+            </p>
+            <ul class="list" style="margin-top:1rem">
+              <li>Адаптивный интерфейс, светлая и тёмная тема</li>
+              <li>Локализация (русский / английский)</li>
+              <li>Анимации интерфейса (Motion)</li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- 7 -->
+        <section class="slide" data-slide="7">
+          <div class="slide-inner">
+            <h2>Стек: сервер и данные</h2>
+            <p class="lead">Один backend раздаёт REST API и собранный фронтенд.</p>
+            <p>
+              <span class="tag tag-blue">Node.js 22</span>
+              <span class="tag tag-green">Express.js</span>
+              <span class="tag tag-purple">PostgreSQL 16</span>
+              <span class="tag tag-orange">JWT</span>
+            </p>
+            <ul class="list" style="margin-top:1rem">
+              <li>Схема БД: пользователи, курсы, классы, заявки, встречи, чаты, уведомления</li>
+              <li>Миграции совместимости и сиды для демо-данных</li>
+              <li>Опциональная SMTP-верификация email</li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- 8 -->
+        <section class="slide" data-slide="8">
+          <div class="slide-inner">
+            <h2>Развёртывание</h2>
+            <p class="lead">Docker Compose поднимает приложение и базу; первый запуск готовит демо-аккаунты и курсы.</p>
+            <div class="grid-2">
+              <div class="card">
+                <h3>Один порт</h3>
+                <p>Пользователь открывает <strong>http://localhost:4000</strong> — и API, и SPA.</p>
+              </div>
+              <div class="card">
+                <h3>Повторяемость</h3>
+                <p>Одинаковое окружение на машине преподавателя, ученика и сервера.</p>
+              </div>
+            </div>
+            <ul class="list" style="margin-top:1rem">
+              <li>Healthcheck <code style="font-size:0.85em;background:var(--muted);padding:0.1em 0.35em;border-radius:4px">/healthz</code> для мониторинга</li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- 9 -->
+        <section class="slide" data-slide="9">
+          <div class="slide-inner">
+            <h2>Преимущества (1/2)</h2>
+            <p class="lead">Почему это не «ещё один сайт с уроками».</p>
+            <ul class="list">
+              <li><strong>Полный цикл</strong> — от теории до запуска кода и оценки в одной системе</li>
+              <li><strong>Школьный контекст</strong> — классы, индивидуальные курсы, роль родителя</li>
+              <li><strong>Видео встроено</strong> — не нужно отдельно договариваться о Zoom для урока</li>
+              <li><strong>Открытый стек</strong> — можно развивать и кастомизировать под школу/кружок</li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- 10 -->
+        <section class="slide" data-slide="10">
+          <div class="slide-inner">
+            <h2>Преимущества (2/2)</h2>
+            <ul class="list">
+              <li><strong>Геймификация</strong> — мотивация через XP и лидерборд, а не только оценки</li>
+              <li><strong>Готовность к продакшену</strong> — роли, JWT, PostgreSQL, Docker</li>
+              <li><strong>Мультиязычный UI</strong> — удобно для смешанных групп и отчётности</li>
+              <li><strong>Гибкость проверки</strong> — авто- и ручная проверка заданий под разные типы задач</li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- 11 -->
+        <section class="slide" data-slide="11">
+          <div class="slide-inner">
+            <h2>Сравнение с типичными аналогами</h2>
+            <p class="lead">Упрощённо: где сильна CodeKids как связка функций.</p>
+            <table class="compare-table">
+              <thead>
+                <tr>
+                  <th>Критерий</th>
+                  <th>CodeKids</th>
+                  <th>Часто у других</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>LMS + классы + родитель</td>
+                  <td class="check">да</td>
+                  <td>часто только учитель/ученик</td>
+                </tr>
+                <tr>
+                  <td>Компилятор JS/Python в продукте</td>
+                  <td class="check">да</td>
+                  <td class="partial">редко вместе с классами</td>
+                </tr>
+                <tr>
+                  <td>Видеоуроки (WebRTC)</td>
+                  <td class="check">Jitsi</td>
+                  <td>внешняя ссылка или отдельное ПО</td>
+                </tr>
+                <tr>
+                  <td>Геймификация + чат</td>
+                  <td class="check">встроено</td>
+                  <td class="partial">не всегда в одном месте</td>
+                </tr>
+                <tr>
+                  <td>Самостоятельный деплой</td>
+                  <td class="check">Docker</td>
+                  <td>SaaS без своего сервера</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- 12 -->
+        <section class="slide" data-slide="12">
+          <div class="slide-inner">
+            <h2>Перспективы развития</h2>
+            <div class="grid-2">
+              <div class="card">
+                <h3>Контент и методика</h3>
+                <p>Новые курсы, тесты, шаблоны уроков, интеграция с задачниками.</p>
+              </div>
+              <div class="card">
+                <h3>Продукт</h3>
+                <p>Улучшение компилятора, аналитика для школ, мобильная вёрстка.</p>
+              </div>
+              <div class="card">
+                <h3>Инфраструктура</h3>
+                <p>SMTP по умолчанию, бэкапы, hardening JWT и секретов для production.</p>
+              </div>
+              <div class="card">
+                <h3>Сообщество</h3>
+                <p>Open Source — форки под региональные программы и кружки.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 13 -->
+        <section class="slide" data-slide="13">
+          <div class="slide-inner" style="text-align:center">
+            <div class="badge" style="margin-left:auto;margin-right:auto">Спасибо за внимание</div>
+            <h1 style="margin-bottom:0.5rem">CodeKids</h1>
+            <p class="lead" style="margin-left:auto;margin-right:auto">Вопросы?</p>
+            <p style="color:var(--muted-foreground);font-size:0.875rem;margin-top:1rem">
+              Откройте <code style="background:var(--muted);padding:0.2em 0.5em;border-radius:6px">README.md</code> в корне репозитория — там стек, роли и запуск через Docker.
+            </p>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="nav-zones" aria-hidden="true">
+      <button type="button" id="zonePrev" aria-label="Предыдущий слайд"></button>
+      <button type="button" id="zoneNext" aria-label="Следующий слайд"></button>
+    </div>
+
+    <footer class="footer-hint">
+      <span>← → стрелки · Пробел · клик слева/справа</span>
+      <div class="dots" id="dots"></div>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      const track = document.getElementById('track');
+      const slides = track.querySelectorAll('.slide');
+      const n = slides.length;
+      let i = 0;
+
+      document.getElementById('total').textContent = String(n);
+      const curEl = document.getElementById('cur');
+      const dots = document.getElementById('dots');
+
+      for (let k = 0; k < n; k++) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('aria-label', 'Слайд ' + (k + 1));
+        if (k === 0) b.classList.add('active');
+        b.addEventListener('click', () => go(k));
+        dots.appendChild(b);
+      }
+
+      function go(index) {
+        i = Math.max(0, Math.min(n - 1, index));
+        track.style.transform = 'translateX(' + (-i * 100) + '%)';
+        curEl.textContent = String(i + 1);
+        dots.querySelectorAll('button').forEach((btn, j) => {
+          btn.classList.toggle('active', j === i);
+        });
+      }
+
+      document.getElementById('prevBtn').addEventListener('click', () => go(i - 1));
+      document.getElementById('nextBtn').addEventListener('click', () => go(i + 1));
+      document.getElementById('zonePrev').addEventListener('click', () => go(i - 1));
+      document.getElementById('zoneNext').addEventListener('click', () => go(i + 1));
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+          e.preventDefault();
+          go(i + 1);
+        } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+          e.preventDefault();
+          go(i - 1);
+        } else if (e.key === 'Home') go(0);
+        else if (e.key === 'End') go(n - 1);
+      });
+
+      const themeBtn = document.getElementById('themeBtn');
+      const pref = localStorage.getItem('ck-pres-theme');
+      if (pref === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+      themeBtn.addEventListener('click', () => {
+        const d = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (d) {
+          document.documentElement.removeAttribute('data-theme');
+          localStorage.setItem('ck-pres-theme', 'light');
+        } else {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          localStorage.setItem('ck-pres-theme', 'dark');
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

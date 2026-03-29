@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CodeKids — команда «Rich»</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --background: #ffffff;
+      --foreground: #1a1a1a;
+      --card: #ffffff;
+      --muted: #ececf0;
+      --muted-foreground: #717182;
+      --primary: #030213;
+      --primary-foreground: #ffffff;
+      --accent: #e9ebef;
+      --border: rgba(0, 0, 0, 0.1);
+      --radius: 0.625rem;
+      --radius-xl: calc(var(--radius) + 4px);
+      --blue: #3b82f6;
+      --green: #22c55e;
+      --purple: #a855f7;
+      --orange: #f97316;
+      --cyan: #06b6d4;
+    }
+    [data-theme="dark"] {
+      --background: #1c1c1e;
+      --foreground: #fafafa;
+      --card: #252528;
+      --muted: #2e2e32;
+      --muted-foreground: #a1a1aa;
+      --primary: #fafafa;
+      --primary-foreground: #18181b;
+      --accent: #2e2e32;
+      --border: rgba(255, 255, 255, 0.12);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 16px;
+      background: var(--background);
+      color: var(--foreground);
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+    .deck { height: 100vh; display: flex; flex-direction: column; }
+    .topbar {
+      flex-shrink: 0;
+      height: 56px;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--background) 95%, transparent);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.5rem;
+      z-index: 10;
+    }
+    .brand { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; font-size: 0.95rem; }
+    .brand svg { width: 20px; height: 20px; }
+    .brand span { color: var(--muted-foreground); font-weight: 500; font-size: 0.8rem; }
+    .controls { display: flex; align-items: center; gap: 0.75rem; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--background);
+      color: var(--muted-foreground);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn:hover { background: var(--accent); color: var(--foreground); }
+    .btn-primary {
+      background: var(--primary);
+      color: var(--primary-foreground);
+      border-color: transparent;
+    }
+    .btn-primary:hover { opacity: 0.92; color: var(--primary-foreground); }
+    .slide-viewport { flex: 1; position: relative; overflow: hidden; }
+    .slides-track {
+      display: flex;
+      height: 100%;
+      transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .slide {
+      flex: 0 0 100%;
+      width: 100%;
+      height: 100%;
+      padding: 2.5rem 3rem 5rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      position: relative;
+    }
+    .slide::before {
+      content: '';
+      position: absolute;
+      top: 30%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(600px, 80vw);
+      height: 400px;
+      background: color-mix(in srgb, var(--primary) 5%, transparent);
+      border-radius: 50%;
+      filter: blur(64px);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .slide-inner { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; width: 100%; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.35rem 1rem;
+      border-radius: 9999px;
+      border: 1px solid var(--border);
+      font-size: 0.8125rem;
+      color: var(--muted-foreground);
+      background: var(--background);
+      margin-bottom: 1rem;
+    }
+    h1 {
+      font-size: clamp(2rem, 4.5vw, 3.25rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.05;
+      margin-bottom: 0.75rem;
+    }
+    h1 .muted {
+      display: block;
+      font-weight: 600;
+      color: var(--muted-foreground);
+      font-size: 0.5em;
+      margin-top: 0.5rem;
+      letter-spacing: 0.02em;
+    }
+    h2 {
+      font-size: clamp(1.5rem, 2.8vw, 2rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+    .subh2 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--muted-foreground);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.75rem;
+    }
+    .lead {
+      font-size: 1rem;
+      color: var(--muted-foreground);
+      line-height: 1.55;
+      max-width: 40rem;
+      margin-bottom: 1rem;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.85rem;
+      margin-top: 1rem;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 1rem 1.1rem;
+      background: var(--card);
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .card:hover {
+      box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+      transform: translateY(-2px);
+    }
+    [data-theme="dark"] .card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
+    .card h3 { font-size: 0.88rem; font-weight: 600; margin-bottom: 0.35rem; }
+    .card p, .card li { font-size: 0.78rem; color: var(--muted-foreground); line-height: 1.5; }
+    ul.list { list-style: none; margin-top: 0.5rem; }
+    ul.list li {
+      padding: 0.28rem 0;
+      padding-left: 1.1rem;
+      position: relative;
+      font-size: 0.85rem;
+      color: var(--muted-foreground);
+      line-height: 1.45;
+    }
+    ul.list li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0.62em;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--primary);
+      opacity: 0.45;
+    }
+    ul.list li strong { color: var(--foreground); font-weight: 600; }
+    .tag {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.65rem;
+      font-weight: 600;
+      margin: 0.1rem 0.1rem 0 0;
+      border: 1px solid var(--border);
+    }
+    .tag-blue { background: rgba(59, 130, 246, 0.1); color: var(--blue); border-color: rgba(59, 130, 246, 0.2); }
+    .tag-green { background: rgba(34, 197, 94, 0.1); color: var(--green); border-color: rgba(34, 197, 94, 0.2); }
+    .tag-purple { background: rgba(168, 85, 247, 0.1); color: var(--purple); border-color: rgba(168, 85, 247, 0.2); }
+    .tag-orange { background: rgba(249, 115, 22, 0.1); color: var(--orange); border-color: rgba(249, 115, 22, 0.2); }
+    .tag-cyan { background: rgba(6, 182, 212, 0.1); color: var(--cyan); border-color: rgba(6, 182, 212, 0.2); }
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+      margin-top: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+    }
+    .compare-table th, .compare-table td {
+      padding: 0.55rem 0.7rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .compare-table th { background: var(--muted); font-weight: 600; font-size: 0.72rem; }
+    .compare-table tr:last-child td { border-bottom: none; }
+    .check { color: var(--green); font-weight: 600; }
+    .highlight-box {
+      margin-top: 0.85rem;
+      padding: 0.85rem 1rem;
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--muted) 50%, var(--background));
+      font-size: 0.82rem;
+      color: var(--muted-foreground);
+      line-height: 1.5;
+    }
+    .highlight-box strong { color: var(--foreground); }
+    .footer-hint {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 0.75rem 1.5rem;
+      border-top: 1px solid var(--border);
+      background: var(--background);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--muted-foreground);
+      z-index: 20;
+    }
+    .dots { display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: center; max-width: 55%; }
+    .dots button {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      border: none;
+      background: var(--border);
+      cursor: pointer;
+      padding: 0;
+      transition: transform 0.15s, background 0.15s;
+    }
+    .dots button.active { background: var(--primary); transform: scale(1.15); }
+    .nav-zones {
+      position: fixed;
+      top: 56px;
+      bottom: 48px;
+      left: 0;
+      right: 0;
+      display: flex;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .nav-zones button { pointer-events: auto; flex: 1; border: none; background: transparent; cursor: pointer; }
+    @media (max-width: 640px) {
+      .slide { padding: 1.5rem 1.1rem 4.5rem; }
+      .topbar { padding: 0 1rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <header class="topbar">
+      <div class="brand">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+        CodeKids <span>· команда «Rich»</span>
+      </div>
+      <div class="controls">
+        <span style="font-size:0.75rem;color:var(--muted-foreground)"><span id="cur">1</span> / <span id="total">13</span></span>
+        <button type="button" class="btn" id="themeBtn" aria-label="Тема">Тема</button>
+        <button type="button" class="btn btn-primary" id="prevBtn">Назад</button>
+        <button type="button" class="btn btn-primary" id="nextBtn">Далее</button>
+      </div>
+    </header>
+
+    <div class="slide-viewport">
+      <div class="slides-track" id="track">
+
+        <section class="slide">
+          <div class="slide-inner">
+            <h1>CodeKids<span class="muted">Образовательная платформа для обучения программированию</span></h1>
+            <p class="lead" style="margin-bottom:0.25rem"><strong style="color:var(--foreground)">Название команды:</strong> «Rich»</p>
+            <p class="lead">Курсы, классы, компилятор в браузере, видеоуроки, чат и геймификация — в одном веб-приложении.</p>
+          </div>
+        </section>
+
+        <section class="slide">
+          <div class="slide-inner">
+          
+            <h2>Для кого эта платформа</h2>
+            <p class="lead">Один продукт закрывает сценарии школы и семьи</p>
+            <div class="grid-2">
+              <div class="card">
+                <h3>Школы</h3>
+                <p>Классы, расписание встреч, закрытые курсы для группы и отчётность по активности.</p>
+              </div>
+              <div class="card">
+                <h3>Преподаватели</h3>
+                <p>Дашборд, задания с проверкой, онлайн-урок в том же интерфейсе, что и материалы.</p>
+              </div>
+              <div class="card">
+                <h3>Ученики</h3>
+                <p>Понятный путь от темы к коду, геймификация и честный рейтинг среди группы.</p>
+              </div>
+              <div class="card">
+                <h3>Родители</h3>
+                <p>Видимость прогресса без лишнего доступа к учебному процессу — доверие и прозрачность.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="slide">
+          <div class="slide-inner">
+            <p class="subh2">Технические решения · слайд 1 из 2</p>
+            <h2>Разработка обязательного функционала</h2>
+            <p class="lead">Базовый функционал, без которого платформа не выполняет свою учебную задачу.</p>
+            <div class="grid-2">
+              <div class="card">
+                <h3>Авторизация и регистрация</h3>
+                <p>Простая процедура входа; сохранение прогресса, достижений и привязки к классу. JWT, роли, верификация email (SMTP при необходимости).</p>
+              </div>
+              <div class="card">
+                <h3>Уроки и модули</h3>
+                <p>Последовательные учебные модули по темам: переменные, циклы, условия, функции и др. Структура курсов и уроков в PostgreSQL.</p>
+              </div>
+              <div class="card">
+                <h3>Уровни, XP, достижения</h3>
+                <p>Система мотивации: очки опыта, уровни, награды, серии занятий — данные синхронизируются с профилем ученика.</p>
+              </div>
+              <div class="card">
+                <h3>Практические задания</h3>
+                <p>Мини-проекты и задачи внутри приложения: написание скриптов, отправка решений, ручная и автоматическая проверка.</p>
+              </div>
+              <div class="card" style="grid-column: 1 / -1;">
+                <h3>Тестирование знаний</h3>
+                <p>Короткие викторины и экзамены для закрепления материала; результаты учитываются в прогрессе и при необходимости — в рейтинге.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="slide">
+          <div class="slide-inner">
+            <p class="subh2">Технические решения · слайд 2 из 2</p>
+            <h2>Разработка дополнительного функционала</h2>
+            <p class="lead">Заявленные возможности плюс усиление продукта функциями, которые редко совмещаются у конкурентов в одной системе.</p>
+            <div class="grid-2">
+              <div class="card">
+                <h3>Родительский контроль</h3>
+                <p>Роль родителя: просмотр прогресса привязанных детей без доступа к коду заданий — прозрачность для семьи.</p>
+              </div>
+              <div class="card">
+                <h3>Сообщество и рейтинги</h3>
+                <p>Внутренний мессенджер, таблица лидеров, сравнение успехов; общение без ухода на внешние мессенджеры.</p>
+              </div>
+            </div>
+            <div class="highlight-box">
+              <strong>Чего часто нет у конкурентов вместе:</strong> встроенный компилятор Python и JavaScript в браузере (без установки IDE); онлайн-уроки через WebRTC (Jitsi) прямо в интерфейсе; классы «как в школе» и индивидуальные курсы с закрытым доступом; развёртывание через Docker на своём сервере с полным контролем данных; двуязычный интерфейс (RU/EN); дашборд преподавателя с аналитикой по курсам и ученикам.
+            </div>
+          </div>
+        </section>
+
+        <section class="slide">
+          <div class="slide-inner">
+            <p class="subh2">Уникальность и особенности · 1 / 2</p>
+            <h2>Единая среда: от теории до кода и видео</h2>
+            <p class="lead">Ученик не переключается между хостингом курсов, IDE, Zoom и чатом — теория, практика, звонок преподавателю и обсуждение в одном окне браузера.</p>
+            <ul class="list">
+              <li><strong>Компилятор в продукте</strong> — запуск кода без установки окружения на домашнем ПК</li>
+              <li><strong>Видеоуроки</strong> — встречи на базе Jitsi, расписание и контекст класса в одной системе</li>
+              <li><strong>Гибкая проверка</strong> — и автотесты, и ручная оценка преподавателя для творческих задач</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="slide">
+          <div class="slide-inner">
+            <p class="subh2">Уникальность и особенности · 2 / 2</p>
+            <h2>Школа и родитель — одна модель доступа</h2>
+            <p class="lead">Платформа заточена под реальный класс: публичные курсы, курсы только для группы, индивидуальные траектории и прозрачность для родителя.</p>
+            <ul class="list">
+              <li><strong>Классы</strong> — преподаватель ведёт набор, назначает курсы, видит активность</li>
+              <li><strong>Геймификация</strong> — XP, уровни, серии дней, лидерборд как дополнительная мотивация к оценкам</li>
+              <li><strong>Open Source и Docker</strong> — школы и кружки могут развернуть копию у себя и дорабатывать под программу</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="slide">
+          <div class="slide-inner">
+            <h2>Конкурентные преимущества</h2>
+            <p class="lead">Сводка: сочетание функций, которое у массовых MOOC и LMS обычно разбросано по разным сервисам.</p>
+            <table class="compare-table">
+              <thead>
+                <tr>
+                  <th>Критерий</th>
+                  <th>CodeKids (команда «Rich»)</th>
+                  <th>Типично у других</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>LMS + классы + родитель</td>
+                  <td class="check">в одном продукте</td>
+                  <td>часто только учитель/ученик</td>
+                </tr>
+                <tr>
+                  <td>Код в браузере + задания</td>
+                  <td class="check">Python / JS</td>
+                  <td>отдельная песочница или десктоп</td>
+                </tr>
+                <tr>
+                  <td>Видеоуроки</td>
+                  <td class="check">встроены (Jitsi)</td>
+                  <td>внешняя ссылка, отдельное приложение</td>
+                </tr>
+                <tr>
+                  <td>Свой сервер и данные</td>
+                  <td class="check">Docker</td>
+                  <td>только облако SaaS</td>
+                </tr>
+                <tr>
+                  <td>Геймификация + чат + рейтинг</td>
+                  <td class="check">встроено</td>
+                  <td>не всё вместе</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="slide">
+          <div class="slide-inner">
+            <p class="subh2">Перспективы развития · 1 / 3</p>
+            <h2>Обучение и контент</h2>
+            <p class="lead">Развитие методической базы и библиотеки курсов под разные возрасты и уровни.</p>
+            <ul class="list">
+              <li>Новые модули по языкам и направлениям (веб, SQL, алгоритмы)</li>
+              <li>Банк тестов и автопроверяемых задач с разными уровнями сложности</li>
+              <li>Шаблоны уроков и рекомендованные траектории для преподавателей</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="slide">
+          <div class="slide-inner">
+            <p class="subh2">Перспективы развития · 2 / 3</p>
+            <h2>Продукт и пользовательский опыт</h2>
+            <p class="lead">Улучшение интерфейса, аналитики и доступности для масштабирования аудитории.</p>
+            <ul class="list">
+              <li>Расширенная аналитика для школ: вовлечённость, слабые темы, отчёты для родителей</li>
+              <li>Улучшение мобильной вёрстки и PWA для учёбы с планшета</li>
+              <li>Развитие компилятора и песочницы (лимиты, безопасность, больше языков)</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="slide">
+          <div class="slide-inner">
+            <p class="subh2">Перспективы развития · 3 / 3</p>
+            <h2>Инфраструктура и экосистема</h2>
+            <p class="lead">Надёжность, интеграции и сообщество вокруг открытого кода.</p>
+            <ul class="list">
+              <li>Production-hardening: SMTP, бэкапы БД, секреты и мониторинг</li>
+              <li>Интеграции с школьными системами (экспорт оценок, единый вход — по запросу заказчика)</li>
+              <li>Развитие open-source сообщества: форки под региональные программы и кружки программирования</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="slide">
+          <div class="slide-inner">
+            <h2>Архитектура и стек <span style="font-size:0.75em;font-weight:500;color:var(--muted-foreground)">(дополнительно)</span></h2>
+            <p class="lead">Современный стек для быстрой разработки и предсказуемого развёртывания.</p>
+            <p>
+              <span class="tag tag-blue">React 19</span>
+              <span class="tag tag-green">Vite</span>
+              <span class="tag tag-purple">TypeScript</span>
+              <span class="tag tag-orange">Tailwind · Radix</span>
+              <span class="tag tag-cyan">Express</span>
+              <span class="tag tag-blue">PostgreSQL 16</span>
+              <span class="tag tag-green">Docker</span>
+            </p>
+            <ul class="list" style="margin-top:0.75rem">
+              <li>REST API и SPA на одном порте в production; healthcheck для мониторинга</li>
+              <li>Роли: superadmin, teacher, student, parent — отражены в модели данных и JWT</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="slide">
+          <div class="slide-inner" style="text-align:center">
+            <div class="badge" style="margin-left:auto;margin-right:auto">Спасибо за внимание</div>
+            <h1 style="margin-bottom:0.35rem">CodeKids</h1>
+            <p style="color:var(--muted-foreground);font-weight:600;margin-bottom:1rem">Команда «Rich»</p>
+            <p class="lead" style="margin-left:auto;margin-right:auto">Готовы ответить на вопросы</p>
+          </div>
+        </section>
+
+      </div>
+    </div>
+
+    <div class="nav-zones" aria-hidden="true">
+      <button type="button" id="zonePrev" aria-label="Предыдущий слайд"></button>
+      <button type="button" id="zoneNext" aria-label="Следующий слайд"></button>
+    </div>
+
+    <footer class="footer-hint">
+      <spa</span>
+      <div class="dots" id="dots"></div>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      const track = document.getElementById('track');
+      const slides = track.querySelectorAll('.slide');
+      const n = slides.length;
+      let i = 0;
+      document.getElementById('total').textContent = String(n);
+      const curEl = document.getElementById('cur');
+      const dots = document.getElementById('dots');
+      for (let k = 0; k < n; k++) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('aria-label', 'Слайд ' + (k + 1));
+        if (k === 0) b.classList.add('active');
+        b.addEventListener('click', () => go(k));
+        dots.appendChild(b);
+      }
+      function go(index) {
+        i = Math.max(0, Math.min(n - 1, index));
+        track.style.transform = 'translateX(' + (-i * 100) + '%)';
+        curEl.textContent = String(i + 1);
+        dots.querySelectorAll('button').forEach((btn, j) => { btn.classList.toggle('active', j === i); });
+      }
+      document.getElementById('prevBtn').addEventListener('click', () => go(i - 1));
+      document.getElementById('nextBtn').addEventListener('click', () => go(i + 1));
+      document.getElementById('zonePrev').addEventListener('click', () => go(i - 1));
+      document.getElementById('zoneNext').addEventListener('click', () => go(i + 1));
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); go(i + 1); }
+        else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(i - 1); }
+        else if (e.key === 'Home') go(0);
+        else if (e.key === 'End') go(n - 1);
+      });
+      const themeBtn = document.getElementById('themeBtn');
+      const pref = localStorage.getItem('ck-pres-rich-theme');
+      if (pref === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+      themeBtn.addEventListener('click', () => {
+        const d = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (d) {
+          document.documentElement.removeAttribute('data-theme');
+          localStorage.setItem('ck-pres-rich-theme', 'light');
+        } else {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          localStorage.setItem('ck-pres-rich-theme', 'dark');
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
